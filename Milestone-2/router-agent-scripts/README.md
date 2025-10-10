@@ -97,17 +97,19 @@ Key constraints enforced by the generator:
 - `/code` contexts explicitly mention Python deliverables.
 - `/general-search` commands always include `mode=web|rag|both` and describe the
   blue general-search agent with research-grade queries (e.g., targeting arXiv or MIT resources).
+- General-search examples must follow `/general-search(query="...", mode=...)` exactly (include the mode parameter).
 - `expected_artifacts` lists 3-5 deliverables spanning proofs, code, and citations.
 - `thinking_outline` captures 4-6 numbered steps that expose the reasoning chain
   the router expects downstream agents to follow, including at least two explicit verification steps.
 - `handoff_plan` summarizes the CEO-style orchestration, showing agent flow with
-  arrows and verification/fallback behaviour.
+  arrows and verification/fallback behaviour. Use explicit ASCII arrows (`/general-search -> /math -> /code -> router QA`).
 - `quality_score` encodes heuristic quality metrics (context detail, verification density,
   domain terminology) to support downstream filtering.
 - `user_query` (≥100 chars) and `task_summary` (≥50 chars) must sound like graduate research or
   competition prep requests and include domain-specific terminology.
 - `route_plan` contexts must each provide ≥40 characters with precise notation, algorithms,
-  or constraints, and include domain-specific keywords.
+  or constraints, include at least two domain-specific keywords (chosen from the glossary enumerated in the prompt), and avoid introductory patterns.
+- Avoid banned phrases and trivial tasks (quadratic formula, binary search, Fibonacci, hello world, two-sum, etc.).
 - `difficulty` is always `advanced` to align with high-stakes routing for an 8B model.
 
 ### CLI options

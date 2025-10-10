@@ -217,6 +217,39 @@ DOMAIN_KEYWORDS = {
     "cuda",
     "arxiv",
     "mit",
+    "lagrangian",
+    "jacobian",
+    "optimality",
+    "stochastic gradient",
+    "spectral norm",
+    "fid",
+    "nash",
+    "monte carlo",
+    "statistics",
+    "regression",
+    "curriculum",
+    "prototype",
+    "usability",
+    "robotics",
+    "encryption",
+    "database",
+    "cloud",
+    "climate",
+    "biology",
+    "physics",
+    "chemistry",
+    "education",
+    "finance",
+    "econometrics",
+    "thermodynamics",
+    "biomedical",
+    "cybersecurity",
+    "supply chain",
+    "control theory",
+    "optimization",
+    "modeling",
+    "energy",
+    "materials",
 }
 
 MIN_USER_QUERY_LEN = 100
@@ -234,10 +267,27 @@ ANTI_PATTERNS = (
     "gaussian elimination homework",
 )
 
+DIFFICULTY_DISTRIBUTION = [
+    "advanced",
+    "advanced",
+    "advanced",
+    "intermediate",
+    "advanced",
+    "introductory",
+    "advanced",
+    "intermediate",
+    "advanced",
+]
+
 
 def _contains_domain_keyword(text: str) -> bool:
     lowered = text.lower()
     return any(keyword in lowered for keyword in DOMAIN_KEYWORDS)
+
+
+def _count_domain_keywords(text: str) -> int:
+    lowered = text.lower()
+    return sum(1 for keyword in DOMAIN_KEYWORDS if keyword in lowered)
 
 
 def _strip_code_fence(payload: str) -> str:
@@ -353,10 +403,17 @@ class GeminiRouterDatasetBuilder:
         rng = random.Random(rng_seed)
         return rng.choice(ADVANCED_THEMES)
 
+    def difficulty_for_index(self, idx: int) -> str:
+        """Sample a difficulty level for diversified training."""
+        rng_seed = (self._seed + 11) * (idx + 29)
+        rng = random.Random(rng_seed)
+        return rng.choice(DIFFICULTY_DISTRIBUTION)
+
     def generate_example(self, idx: int, variant: Dict[str, Any]) -> RouterExample:
         """Call Gemini to synthesize a single router-training example."""
         theme = self.theme_for_index(idx)
-        prompt = self._build_prompt(idx, variant, theme)
+        difficulty = self.difficulty_for_index(idx)
+        prompt = self._build_prompt(idx, variant, theme, difficulty)
         for attempt in range(1, self.max_retries + 1):
             try:
                 client = self._get_client()
@@ -376,8 +433,9 @@ class GeminiRouterDatasetBuilder:
                 else:
                     payload_text = getattr(response, "text", "") or ""
                     data = _as_json(payload_text)
-                self._validate_payload(data, variant)
-                quality_score = self._compute_quality_score(data, theme)
+                self._validate_payload(data, variant, difficulty)
+                difficulty_value = data["difficulty"]
+                quality_score = self._compute_quality_score(data, theme, difficulty_value)
                 self.console.log(
                     f"[cyan]example {idx}: quality_score={quality_score:.1f}[/cyan]"
                 )
@@ -390,7 +448,7 @@ class GeminiRouterDatasetBuilder:
                     expected_artifacts=data["expected_artifacts"],
                     thinking_outline=data["thinking_outline"],
                     handoff_plan=data["handoff_plan"],
-                    difficulty=data["difficulty"],
+                    difficulty=difficulty_value,
                     tags=data["tags"],
                     quality_score=quality_score,
                 )
@@ -416,7 +474,13 @@ class GeminiRouterDatasetBuilder:
         self.console.log(f"[yellow]{reason}[/yellow]")
         time.sleep(wait)
 
-    def _build_prompt(self, idx: int, variant: Dict[str, Any], theme: str) -> str:
+    def _build_prompt(
+        self,
+        idx: int,
+        variant: Dict[str, Any],
+        theme: str,
+        difficulty: str,
+    ) -> str:
         requested_mode = self._search_mode_for_index(idx)
         required_commands = variant["required"]
         command_specs = []
@@ -444,6 +508,65 @@ class GeminiRouterDatasetBuilder:
             "If /general-search is used, craft the query to target authoritative resources (e.g.,"
             " 'site:arxiv.org transformer convergence proof' or 'site:math.mit.edu multivariable optimization')."
         )
+        glossary_preview = ", ".join(sorted(DOMAIN_KEYWORDS)[:40])
+        anti_pattern_preview = ", ".join(ANTI_PATTERNS[:5])
+
+        if difficulty == "advanced":
+            user_line = (
+                f"Provide a realistic, student-facing user_query centered on advanced STEM maths and {theme}, "
+                f"at least 100 characters long, packed with domain-specific terminology, and NEVER mention introductory homework phrases ({anti_pattern_preview})."
+            )
+            summary_line = (
+                "task_summary must be at least 50 characters and capture the graduate-level objective and constraints."
+            )
+            rigor_line = "Every scenario must feel graduate-level or IOI difficulty and require deep reasoning."
+            thinking_range = "4-6"
+            verification_text = "AT LEAST TWO"
+            route_context_line = (
+                "Each route_plan context must be ≥40 characters, include at least two glossary tokens, and cite concrete constraints or metrics—never reference introductory tasks."
+            )
+        elif difficulty == "intermediate":
+            user_line = (
+                f"Provide a competition-oriented user_query for {theme}, at least 80 characters, including at least one glossary token and avoiding intro-level phrasing."
+            )
+            summary_line = (
+                "task_summary must be at least 40 characters summarizing the applied objective and success criteria."
+            )
+            rigor_line = "Scenario should challenge advanced undergrads or early graduate students while remaining actionable for the router."
+            thinking_range = "4-5"
+            verification_text = "AT LEAST ONE"
+            route_context_line = (
+                "Each route_plan context must be ≥35 characters, include at least one glossary token, and specify evaluation criteria or constraints (e.g., time complexity, accuracy threshold, safety margin)."
+            )
+        else:
+            user_line = (
+                f"Provide an ambitious but approachable user_query (≥60 characters) that introduces {theme} to a motivated learner, referencing at least one glossary token or precise domain phrase while avoiding banned homework tasks ({anti_pattern_preview})."
+            )
+            summary_line = (
+                "task_summary must be at least 35 characters, clarifying the learning or applied outcome sought."
+            )
+            rigor_line = "Scenario should feel like a real user exploring the topic with practical stakes (project planning, applied research, mentoring)."
+            thinking_range = "3-5"
+            verification_text = "AT LEAST ONE"
+            route_context_line = (
+                "Each route_plan context must be ≥30 characters, include at least one glossary token or precise descriptor, and articulate why the tool is necessary."
+            )
+
+        domain_requirement_count = 2 if difficulty == "advanced" else 1
+        glossary_line = (
+            f"When crafting route_plan contexts, explicitly include at least {domain_requirement_count} tokens chosen from this glossary (case-insensitive): {glossary_preview}, ... You may use other advanced terms too, but avoid repeating the same token twice in one context."
+        )
+        thinking_line = (
+            f"thinking_outline must list {thinking_range} numbered strings (\"1.\", \"2.\", ...) that expose the reasoning chain; include {verification_text} verification/validation step(s) with words like \"verify\", \"check\", \"validate\", or \"audit\"."
+        )
+        difficulty_line = f"difficulty must be \"{difficulty}\"."
+        tags_line = "Provide 1-3 topical tags (include at least one token tied to the theme)."
+        route_examples = (
+            "/math(Apply Karush-Kuhn-Tucker optimality conditions to the transformer sparsification Lagrangian with spectral norm and Lipschitz constraints while referencing the Hessian eigenvalue budget.)",
+            "/code(Write JAX to implement score-based diffusion sampling with Hutchinson trace estimator, tracking FID metrics and enforcing spectral norm regularization.)",
+            f"/general-search(query=\"site:arxiv.org diffusion score matching Hessian Lipschitz analysis\", mode={requested_mode})",
+        )
+
         prompt = textwrap.dedent(
             f"""
             You are Gemini 2.5 Pro creating synthetic router-training data.
@@ -457,15 +580,20 @@ class GeminiRouterDatasetBuilder:
               * Treat the general search tool as color-coded "blue" and mention this in route_rationale.
               * When /code is used, explicitly mention Python in the command context.
               * The request variant is `{variant['name']}` which means: {variant['description']}
-              * Provide a realistic, student-facing user_query centered on advanced STEM maths and {theme}.
-              * Every scenario must feel graduate-level or IOI difficulty and require deep reasoning.
-              * thinking_outline must list 4-6 numbered strings ("1.", "2.", ...) that expose the reasoning chain the router expects; include at least one verification/quality-check step.
-              * Provide 1-3 topical tags (include at least one token tied to {theme}).
-              * difficulty must be "advanced".
-              * Populate expected_artifacts with 3-5 bullet-point style strings covering proofs, code, and citations.
-              * Provide handoff_plan describing agent-to-agent flow (use arrows like "/general-search -> /math -> /code"), including verification loops or fallback contingencies.
+              * {user_line}
+              * {summary_line}
+              * {rigor_line}
+              * {thinking_line}
+              * {tags_line}
+              * {difficulty_line}
+              * Populate expected_artifacts with 3-5 bullet-point style strings covering proofs, code, citations, and verification artifacts.
+              * Provide handoff_plan describing agent-to-agent flow (use arrows like "/general-search -> /math -> /code"), including explicit keywords such as "verification", "fallback", or "loop" to describe quality checks.
               * Route_plan contexts must specify precise notation, algorithm names, library/tooling constraints, and evaluation metrics so sub-agents can execute without ambiguity.
+              * {route_context_line}
+              * {glossary_line}
               * The user_query should read like a graduate researcher or competitive programmer seeking help on a novel experiment, not a basic homework request.
+              * handoff_plan MUST be formatted with ASCII arrows (`->`) connecting the literal tool names and router QA, e.g., "/general-search -> /math -> /code -> router QA (fallback: loop /general-search -> /math)".
+              * Do not paraphrase the arrows with prose (e.g., "then"); the arrow notation itself is mandatory.
             Anti-patterns to AVOID:
               * Do NOT create elementary prompts like "derive the quadratic formula" or "implement binary search".
               * Avoid introductory calculus, routine linear algebra drills, or toy coding warmups.
@@ -483,7 +611,11 @@ class GeminiRouterDatasetBuilder:
               * Make the task description explicit about constraints (e.g., asymptotics, error bounds, convergence guarantees).
               * Encourage downstream agents to return detailed reasoning traces, verified computations, citations, AND report back to the router for sign-off.
               * Highlight markers of graduate-level complexity: research-grade citations, multi-constraint optimization, stochastic analysis, or competitive-programming difficulty tiers.
-            
+              * Example route_plan contexts include: "{route_examples[0]}", "{route_examples[1]}", "{route_examples[2]}".
+              * Example handoff_plan: "/general-search -> /math -> /code -> router QA (verification: run symbolic cross-check; fallback: loop /general-search -> /math to source alternative lemma)."
+              * Never include banned phrases or trivial tasks such as {', '.join(ANTI_PATTERNS)}.
+              * Ensure each tool call offers unique value—avoid repeating the same tool back-to-back unless explicitly justified.
+
             Return ONLY valid JSON with double quotes. Do not wrap in markdown.
             """
         ).strip()
