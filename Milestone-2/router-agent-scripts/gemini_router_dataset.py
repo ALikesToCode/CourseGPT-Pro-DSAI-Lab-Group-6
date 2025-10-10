@@ -834,10 +834,25 @@ class GeminiRouterDatasetBuilder:
         if not isinstance(repro, dict) or not repro:
             payload["repro"] = DEFAULT_REPRO.copy()
         else:
+            framework_value = repro.get("framework", DEFAULT_REPRO["framework"])
+            if isinstance(framework_value, list):
+                framework_value = framework_value[0] if framework_value else DEFAULT_REPRO["framework"]
+            elif isinstance(framework_value, dict):
+                framework_value = next(
+                    (
+                        str(value).strip()
+                        for value in framework_value.values()
+                        if isinstance(value, str) and value.strip()
+                    ),
+                    DEFAULT_REPRO["framework"],
+                )
+            elif not isinstance(framework_value, str) or not framework_value.strip():
+                framework_value = DEFAULT_REPRO["framework"]
+
             payload["repro"] = {
                 "seed": repro.get("seed", DEFAULT_REPRO["seed"]),
                 "deterministic": repro.get("deterministic", DEFAULT_REPRO["deterministic"]),
-                "framework": repro.get("framework", DEFAULT_REPRO["framework"]),
+                "framework": framework_value.strip(),
             }
 
         requires_browse = payload.get("requires_browse")
@@ -857,6 +872,34 @@ class GeminiRouterDatasetBuilder:
             if not isinstance(artifacts, list) or not artifacts:
                 io_schema["artifacts"] = DEFAULT_IO_SCHEMA["artifacts"].copy()
             io_schema.setdefault("logs", DEFAULT_IO_SCHEMA["logs"])
+            logs_field = io_schema["logs"]
+            if isinstance(logs_field, list):
+                io_schema["logs"] = logs_field[0] if logs_field else DEFAULT_IO_SCHEMA["logs"]
+            if not isinstance(io_schema["logs"], str) or not io_schema["logs"].strip():
+                io_schema["logs"] = DEFAULT_IO_SCHEMA["logs"]
+            outputs = io_schema.get("outputs")
+            if outputs is None or not isinstance(outputs, dict):
+                io_schema["outputs"] = {"artifacts": DEFAULT_IO_SCHEMA["artifacts"].copy()}
+            else:
+                artifacts_field = outputs.get("artifacts")
+                if isinstance(artifacts_field, dict):
+                    cleaned = [
+                        str(value).strip()
+                        for value in artifacts_field.values()
+                        if isinstance(value, str) and value.strip()
+                    ]
+                    outputs["artifacts"] = cleaned or DEFAULT_IO_SCHEMA["artifacts"].copy()
+                elif isinstance(artifacts_field, list):
+                    cleaned = [
+                        str(item).strip()
+                        for item in artifacts_field
+                        if isinstance(item, str) and item.strip()
+                    ]
+                    outputs["artifacts"] = cleaned or DEFAULT_IO_SCHEMA["artifacts"].copy()
+                elif isinstance(artifacts_field, str) and artifacts_field.strip():
+                    outputs["artifacts"] = [artifacts_field.strip()]
+                else:
+                    outputs["artifacts"] = DEFAULT_IO_SCHEMA["artifacts"].copy()
             payload["io_schema"] = io_schema
 
 
@@ -1243,6 +1286,8 @@ class GeminiRouterDatasetBuilder:
         repro = payload["repro"]
         if not isinstance(repro, dict) or "seed" not in repro:
             raise ValueError("repro must define reproducibility parameters (seed, determinism, framework).")
+        if not isinstance(repro.get("framework"), str) or not repro["framework"].strip():
+            raise ValueError("repro.framework must be a non-empty string naming the primary framework.")
 
         if not isinstance(payload["requires_browse"], bool):
             raise ValueError("requires_browse must be boolean.")
@@ -1258,6 +1303,17 @@ class GeminiRouterDatasetBuilder:
             raise ValueError("io_schema.artifacts must enumerate expected files.")
         if any(not isinstance(path, str) or not path.strip() for path in io_schema["artifacts"]):
             raise ValueError("Each io_schema.artifacts entry must be a non-empty string path.")
+        logs_field = io_schema.get("logs")
+        if not isinstance(logs_field, str) or not logs_field.strip():
+            raise ValueError("io_schema.logs must be a non-empty string path.")
+        outputs = io_schema.get("outputs")
+        if not isinstance(outputs, dict):
+            raise ValueError("io_schema.outputs must be an object containing an artifacts list.")
+        artifacts_list = outputs.get("artifacts")
+        if not isinstance(artifacts_list, list) or not artifacts_list:
+            raise ValueError("io_schema.outputs.artifacts must be a non-empty list of paths.")
+        if any(not isinstance(path, str) or not path.strip() for path in artifacts_list):
+            raise ValueError("Each entry in io_schema.outputs.artifacts must be a non-empty string path.")
 
         thinking_outline = payload["thinking_outline"]
         if not isinstance(thinking_outline, list) or len(thinking_outline) < min_thinking_steps:
