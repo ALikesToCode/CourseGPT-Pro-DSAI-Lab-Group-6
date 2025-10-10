@@ -126,7 +126,9 @@ ROUTER_DATASET_SCHEMA = {
     "difficulty": "introductory | intermediate | advanced",
     "tags": "List of topical tags or skills.",
     "quality_score": "Heuristic score (0-100) reflecting prompt richness and verification coverage.",
+    "todo_list": "Ordered list of granular TODO items the router uses to brief sub-agents and track progress."
 }
+
 
 ADVANCED_THEMES = [
     "Transformers and large language model optimization",
@@ -170,6 +172,10 @@ VERIFY_KEYWORDS = (
     "prove",
     "sanity-check",
     "test",
+    "ensure",
+    "confirm",
+    "cross-validate",
+    "stress-test",
 )
 
 DOMAIN_KEYWORDS = {
@@ -250,6 +256,45 @@ DOMAIN_KEYWORDS = {
     "modeling",
     "energy",
     "materials",
+    "euler-lagrange",
+    "hamiltonian",
+    "poisson",
+    "navier-stokes",
+    "bayes",
+    "likelihood",
+    "prior",
+    "posterior",
+    "gradient boosting",
+    "bootstrap",
+    "currying",
+    "memoization",
+    "game theory",
+    "pareto",
+    "variance",
+    "confidence interval",
+    "precision",
+    "recall",
+    "roc",
+    "auprc",
+    "inception score",
+    "score matching",
+    "langevin",
+    "sobolev",
+    "laplacian",
+    "hermite",
+    "chebyshev",
+    "fourier",
+    "bernoulli",
+    "mcmc",
+    "kalman",
+    "smith-waterman",
+    "bioinformatics",
+    "metropolis",
+    "adversarial",
+    "bandit",
+    "curricular",
+    "erlang",
+    "lambda calculus"
 }
 
 MIN_USER_QUERY_LEN = 100
@@ -278,6 +323,13 @@ DIFFICULTY_DISTRIBUTION = [
     "intermediate",
     "advanced",
 ]
+
+TOOL_TODO_TEMPLATES = {
+    "/math": "- [ ] /math: formalize proofs, check constraints, and document verification steps.",
+    "/code": "- [ ] /code: implement the experiment in Python, run tests, and log metrics for validation.",
+    "/general-search": "- [ ] /general-search: gather high-authority references and cross-check facts.",
+    "router qa": "- [ ] router QA: consolidate tool outputs, verify citations, and approve the response.",
+}
 
 
 def _contains_domain_keyword(text: str) -> bool:
@@ -342,6 +394,7 @@ class RouterExample:
     expected_artifacts: List[str]
     thinking_outline: List[str]
     handoff_plan: str
+    todo_list: List[str]
     difficulty: str
     tags: List[str]
     quality_score: float
@@ -357,6 +410,7 @@ class RouterExample:
                 "expected_artifacts": self.expected_artifacts,
                 "thinking_outline": self.thinking_outline,
                 "handoff_plan": self.handoff_plan,
+                "todo_list": self.todo_list,
                 "difficulty": self.difficulty,
                 "tags": self.tags,
                 "quality_score": round(self.quality_score, 2),
@@ -413,7 +467,8 @@ class GeminiRouterDatasetBuilder:
         """Call Gemini to synthesize a single router-training example."""
         theme = self.theme_for_index(idx)
         difficulty = self.difficulty_for_index(idx)
-        prompt = self._build_prompt(idx, variant, theme, difficulty)
+        requested_mode = self._search_mode_for_index(idx)
+        prompt = self._build_prompt(idx, variant, theme, difficulty, requested_mode)
         for attempt in range(1, self.max_retries + 1):
             try:
                 client = self._get_client()
@@ -433,11 +488,18 @@ class GeminiRouterDatasetBuilder:
                 else:
                     payload_text = getattr(response, "text", "") or ""
                     data = _as_json(payload_text)
+                self._sanitize_payload(
+                    data,
+                    variant,
+                    difficulty,
+                    idx,
+                    requested_mode,
+                )
                 self._validate_payload(data, variant, difficulty)
                 difficulty_value = data["difficulty"]
                 quality_score = self._compute_quality_score(data, theme, difficulty_value)
                 self.console.log(
-                    f"[cyan]example {idx}: quality_score={quality_score:.1f}[/cyan]"
+                    f"[cyan]example {idx} ({difficulty_value}): quality_score={quality_score:.1f}[/cyan]"
                 )
                 return RouterExample(
                     id=data["id"],
@@ -448,6 +510,7 @@ class GeminiRouterDatasetBuilder:
                     expected_artifacts=data["expected_artifacts"],
                     thinking_outline=data["thinking_outline"],
                     handoff_plan=data["handoff_plan"],
+                    todo_list=data["todo_list"],
                     difficulty=difficulty_value,
                     tags=data["tags"],
                     quality_score=quality_score,
@@ -474,14 +537,146 @@ class GeminiRouterDatasetBuilder:
         self.console.log(f"[yellow]{reason}[/yellow]")
         time.sleep(wait)
 
+    @staticmethod
+    def _split_command(command: str) -> Tuple[str, str]:
+        if "(" in command and command.endswith(")"):
+            prefix, rest = command.split("(", 1)
+            return prefix, rest[:-1]
+        return command, ""
+
+    def _sanitize_payload(
+        self,
+        payload: Dict[str, Any],
+        variant: Dict[str, Any],
+        difficulty: str,
+        idx: int,
+        requested_mode: str,
+    ) -> None:
+        payload["id"] = f"router_{idx:04d}"
+
+        route_plan = payload.get("route_plan", [])
+        sanitized_plan: List[str] = []
+        commands_present: List[str] = []
+        prev_prefix: Optional[str] = None
+        domain_requirement = 2 if difficulty == "advanced" else 1
+        for entry in route_plan:
+            if not isinstance(entry, str):
+                continue
+            prefix, body = self._split_command(entry)
+            if prev_prefix == prefix:
+                continue
+            if prefix == "/general-search" and "mode=" not in body:
+                body = body.rstrip()
+                if body:
+                    body = body + f", mode={requested_mode}"
+                else:
+                    body = f"mode={requested_mode}"
+            if prefix == "/code" and "python" not in body.lower():
+                body = body + (", using Python" if body else "using Python")
+
+            needed = max(0, domain_requirement - _count_domain_keywords(body))
+            if needed > 0:
+                additions = []
+                lowered = body.lower()
+                for keyword in DOMAIN_KEYWORDS:
+                    if keyword in lowered or keyword in additions:
+                        continue
+                    additions.append(keyword)
+                    if len(additions) >= needed:
+                        break
+                if additions:
+                    qualifier = ", includes " + ", ".join(additions)
+                    body = body + qualifier
+
+            sanitized_plan.append(f"{prefix}({body})")
+            commands_present.append(prefix)
+            prev_prefix = prefix
+
+        payload["route_plan"] = sanitized_plan
+
+        todo_list = payload.get("todo_list")
+        if not isinstance(todo_list, list):
+            todo_list = []
+
+        # Ensure router QA final task
+        if not todo_list or "router qa" not in todo_list[-1].lower():
+            todo_list.append(TOOL_TODO_TEMPLATES["router qa"])
+
+        # Ensure each todo entry formatted and long enough
+        formatted_todos: List[str] = []
+        for item in todo_list:
+            if not isinstance(item, str):
+                continue
+            stripped = item.strip()
+            if not stripped.startswith("- [ ]"):
+                stripped = "- [ ] " + stripped.lstrip("- ")
+            if len(stripped) < 15:
+                stripped += " (expand details)"
+            formatted_todos.append(stripped)
+        todo_list = formatted_todos or [TOOL_TODO_TEMPLATES["router qa"]]
+
+        # Ensure tool coverage
+        for tool in commands_present:
+            if tool not in ALLOWED_TOOLS:
+                continue
+            if not any(tool in item for item in todo_list):
+                template = TOOL_TODO_TEMPLATES.get(
+                    tool,
+                    f"- [ ] {tool}: execute task, log outputs, and prepare summary.",
+                )
+                todo_list.insert(-1, template)
+
+        # Verification todos
+        min_verification = 2 if difficulty == "advanced" else 1
+        todo_verify = sum(
+            1 for item in todo_list if any(keyword in item.lower() for keyword in VERIFY_KEYWORDS)
+        )
+        if todo_verify < min_verification:
+            for idx_todo, item in enumerate(todo_list[:-1]):
+                if todo_verify >= min_verification:
+                    break
+                lowered = item.lower()
+                if any(keyword in lowered for keyword in VERIFY_KEYWORDS):
+                    continue
+                todo_list[idx_todo] = item.rstrip(".") + " (verify results)"
+                todo_verify += 1
+        while todo_verify < min_verification:
+            todo_list.insert(-1, "- [ ] router QA: verify intermediate outputs and cross-check metrics.")
+            todo_verify += 1
+
+        todo_min, todo_max = (
+            (5, 8)
+            if difficulty == "advanced"
+            else (4, 7)
+            if difficulty == "intermediate"
+            else (3, 6)
+        )
+
+        while len(todo_list) < todo_min:
+            todo_list.insert(
+                -1,
+                "- [ ] /general-search: expand references and validate context with additional sources.",
+            )
+        while len(todo_list) > todo_max and len(todo_list) > todo_min:
+            for idx_todo, item in enumerate(todo_list[:-1]):
+                if "router qa" in item.lower():
+                    continue
+                del todo_list[idx_todo]
+                break
+            else:
+                todo_list = todo_list[: todo_max - 1] + [todo_list[-1]]
+
+        payload["todo_list"] = todo_list
+
+
     def _build_prompt(
         self,
         idx: int,
         variant: Dict[str, Any],
         theme: str,
         difficulty: str,
+        requested_mode: str,
     ) -> str:
-        requested_mode = self._search_mode_for_index(idx)
         required_commands = variant["required"]
         command_specs = []
         for tool in required_commands:
@@ -525,6 +720,9 @@ class GeminiRouterDatasetBuilder:
             route_context_line = (
                 "Each route_plan context must be ≥40 characters, include at least two glossary tokens, and cite concrete constraints or metrics—never reference introductory tasks."
             )
+            todo_line = (
+                "todo_list must include 5-8 entries formatted as '- [ ] /tool: action ...', covering every tool, incorporating verification steps, and ending with a router QA review task."
+            )
         elif difficulty == "intermediate":
             user_line = (
                 f"Provide a competition-oriented user_query for {theme}, at least 80 characters, including at least one glossary token and avoiding intro-level phrasing."
@@ -538,6 +736,9 @@ class GeminiRouterDatasetBuilder:
             route_context_line = (
                 "Each route_plan context must be ≥35 characters, include at least one glossary token, and specify evaluation criteria or constraints (e.g., time complexity, accuracy threshold, safety margin)."
             )
+            todo_line = (
+                "todo_list must include 4-7 entries using '- [ ] /tool: ...' phrasing, referencing each tool at least once and closing with a router QA validation task."
+            )
         else:
             user_line = (
                 f"Provide an ambitious but approachable user_query (≥60 characters) that introduces {theme} to a motivated learner, referencing at least one glossary token or precise domain phrase while avoiding banned homework tasks ({anti_pattern_preview})."
@@ -550,6 +751,9 @@ class GeminiRouterDatasetBuilder:
             verification_text = "AT LEAST ONE"
             route_context_line = (
                 "Each route_plan context must be ≥30 characters, include at least one glossary token or precise descriptor, and articulate why the tool is necessary."
+            )
+            todo_line = (
+                "todo_list must include 3-6 entries formatted '- [ ] ...', guiding the user through the tool sequence and concluding with router QA approval."
             )
 
         domain_requirement_count = 2 if difficulty == "advanced" else 1
@@ -587,10 +791,13 @@ class GeminiRouterDatasetBuilder:
               * {tags_line}
               * {difficulty_line}
               * Populate expected_artifacts with 3-5 bullet-point style strings covering proofs, code, citations, and verification artifacts.
+              * {todo_verify_text}
+              * {todo_line}
               * Provide handoff_plan describing agent-to-agent flow (use arrows like "/general-search -> /math -> /code"), including explicit keywords such as "verification", "fallback", or "loop" to describe quality checks.
               * Route_plan contexts must specify precise notation, algorithm names, library/tooling constraints, and evaluation metrics so sub-agents can execute without ambiguity.
               * {route_context_line}
               * {glossary_line}
+              * Never issue identical tools back-to-back in route_plan; merge reasoning instead of repeating the same tool consecutively.
               * The user_query should read like a graduate researcher or competitive programmer seeking help on a novel experiment, not a basic homework request.
               * handoff_plan MUST be formatted with ASCII arrows (`->`) connecting the literal tool names and router QA, e.g., "/general-search -> /math -> /code -> router QA (fallback: loop /general-search -> /math)".
               * Do not paraphrase the arrows with prose (e.g., "then"); the arrow notation itself is mandatory.
@@ -611,8 +818,9 @@ class GeminiRouterDatasetBuilder:
               * Make the task description explicit about constraints (e.g., asymptotics, error bounds, convergence guarantees).
               * Encourage downstream agents to return detailed reasoning traces, verified computations, citations, AND report back to the router for sign-off.
               * Highlight markers of graduate-level complexity: research-grade citations, multi-constraint optimization, stochastic analysis, or competitive-programming difficulty tiers.
-              * Example route_plan contexts include: "{route_examples[0]}", "{route_examples[1]}", "{route_examples[2]}".
+              * Example route_plan contexts include: "{route_examples[0]}", "{route_examples[1]}", "{route_examples[2]}". Vary tool order when appropriate; not every scenario must start with /general-search.
               * Example handoff_plan: "/general-search -> /math -> /code -> router QA (verification: run symbolic cross-check; fallback: loop /general-search -> /math to source alternative lemma)."
+              * Example todo_list: ["- [ ] /general-search: gather transformer sparsification baselines (verification: cross-check citations).", "- [ ] /math: derive KKT conditions for spectral norm constraint.", "- [ ] /code: run JAX experiment with Hutchinson trace estimator.", "- [ ] router QA: verify proofs and metrics before final answer."]
               * Never include banned phrases or trivial tasks such as {', '.join(ANTI_PATTERNS)}.
               * Ensure each tool call offers unique value—avoid repeating the same tool back-to-back unless explicitly justified.
 
@@ -627,7 +835,12 @@ class GeminiRouterDatasetBuilder:
         rng = random.Random(rng_seed)
         return rng.choice(GENERAL_SEARCH_MODES)
 
-    def _validate_payload(self, payload: Dict[str, Any], variant: Dict[str, Any]) -> None:
+    def _validate_payload(
+        self,
+        payload: Dict[str, Any],
+        variant: Dict[str, Any],
+        target_difficulty: str,
+    ) -> None:
         required_keys = [
             "id",
             "user_query",
@@ -637,6 +850,7 @@ class GeminiRouterDatasetBuilder:
             "expected_artifacts",
             "thinking_outline",
             "handoff_plan",
+            "todo_list",
             "difficulty",
             "tags",
         ]
@@ -644,18 +858,53 @@ class GeminiRouterDatasetBuilder:
             if key not in payload:
                 raise KeyError(f"Missing key `{key}` in payload.")
 
+        difficulty = payload["difficulty"]
+        if difficulty != target_difficulty:
+            raise ValueError(
+                f"Difficulty mismatch: expected '{target_difficulty}' but received '{difficulty}'."
+            )
+
+        if difficulty == "advanced":
+            min_user_len = MIN_USER_QUERY_LEN
+            min_summary_len = MIN_TASK_SUMMARY_LEN
+            min_context_len = MIN_ROUTE_CONTEXT_LEN
+            min_domain_query = 2
+            min_domain_context = 2
+            min_verification_steps = 2
+            min_thinking_steps = 4
+        elif difficulty == "intermediate":
+            min_user_len = 80
+            min_summary_len = 40
+            min_context_len = 35
+            min_domain_query = 1
+            min_domain_context = 1
+            min_verification_steps = 1
+            min_thinking_steps = 4
+        else:
+            min_user_len = 60
+            min_summary_len = 35
+            min_context_len = 30
+            min_domain_query = 1
+            min_domain_context = 1
+            min_verification_steps = 1
+            min_thinking_steps = 3
+
         user_query = payload["user_query"].strip()
-        if len(user_query) < MIN_USER_QUERY_LEN:
-            raise ValueError("user_query must be at least 100 characters for advanced prompts.")
+        if len(user_query) < min_user_len:
+            raise ValueError(
+                f"user_query too short for {difficulty} difficulty (min {min_user_len} chars)."
+            )
         lowered_query = user_query.lower()
-        if not _contains_domain_keyword(user_query):
-            raise ValueError("user_query must reference graduate-level domain terminology.")
+        if _count_domain_keywords(user_query) < min_domain_query:
+            raise ValueError("user_query must reference the theme or domain terminology.")
         if any(pattern in lowered_query for pattern in ANTI_PATTERNS):
             raise ValueError("user_query appears to reference an introductory homework pattern.")
 
         task_summary = payload["task_summary"].strip()
-        if len(task_summary) < MIN_TASK_SUMMARY_LEN:
-            raise ValueError("task_summary must be at least 50 characters long.")
+        if len(task_summary) < min_summary_len:
+            raise ValueError(
+                f"task_summary too short for {difficulty} difficulty (min {min_summary_len} chars)."
+            )
 
         if not isinstance(payload["route_plan"], list) or not payload["route_plan"]:
             raise ValueError("route_plan must be a non-empty list.")
@@ -670,19 +919,23 @@ class GeminiRouterDatasetBuilder:
             for tool in ALLOWED_TOOLS:
                 if cmd.startswith(tool):
                     commands_present.add(tool)
-            if previous_command is not None and cmd.split("(", 1)[0] == previous_command:
+            command_name = cmd.split("(", 1)[0]
+            if previous_command is not None and command_name == previous_command:
                 raise ValueError("route_plan should not repeat identical consecutive tool calls.")
-            previous_command = cmd.split("(", 1)[0]
+            previous_command = command_name
             try:
                 _, raw_context = cmd.split("(", 1)
                 context = raw_context.rstrip(")")
             except ValueError:
                 context = ""
-            if len(context.strip()) < MIN_ROUTE_CONTEXT_LEN:
-                raise ValueError("Each route_plan context must provide ≥40 characters of detailed guidance.")
-            if not _contains_domain_keyword(context):
+            stripped_context = context.strip()
+            if len(stripped_context) < min_context_len:
+                raise ValueError(
+                    f"Each route_plan context must provide ≥{min_context_len} characters of detailed guidance."
+                )
+            if _count_domain_keywords(stripped_context) < min_domain_context:
                 raise ValueError("route_plan contexts must cite domain-specific terminology or constraints.")
-            lower_context = context.lower()
+            lower_context = stripped_context.lower()
             if any(pattern in lower_context for pattern in ANTI_PATTERNS):
                 raise ValueError("route_plan context appears to reference prohibited introductory tasks.")
             if "/general-search" in cmd and "mode=" not in cmd:
@@ -703,15 +956,53 @@ class GeminiRouterDatasetBuilder:
             if not isinstance(artifact, str) or len(artifact.strip()) < 10:
                 raise ValueError("Each expected_artifacts entry must be a descriptive string.")
 
-        difficulty = payload["difficulty"]
-        if difficulty != "advanced":
+        todo_list = payload["todo_list"]
+        if not isinstance(todo_list, list):
+            raise ValueError("todo_list must be an array of strings.")
+        if difficulty == "advanced":
+            todo_min, todo_max = 5, 8
+        elif difficulty == "intermediate":
+            todo_min, todo_max = 4, 7
+        else:
+            todo_min, todo_max = 3, 6
+        if not (todo_min <= len(todo_list) <= todo_max):
             raise ValueError(
-                f"Invalid difficulty level: {difficulty}. Expected 'advanced' for high-rigor training."
+                f"todo_list must contain between {todo_min} and {todo_max} entries for {difficulty} prompts."
             )
+        todo_verify = 0
+        covered_tools = set()
+        for todo in todo_list:
+            if not isinstance(todo, str) or len(todo.strip()) < 15:
+                raise ValueError("Each todo_list entry must be a descriptive string (>=15 chars).")
+            if "[ ]" not in todo:
+                raise ValueError("Each todo_list item must start with '[ ]' to signal an unenforced task.")
+            lower_todo = todo.lower()
+            if any(keyword in lower_todo for keyword in VERIFY_KEYWORDS):
+                todo_verify += 1
+            for tool in ALLOWED_TOOLS:
+                if tool in todo:
+                    covered_tools.add(tool)
+            if "router qa" in lower_todo:
+                covered_tools.add("router qa")
+        if todo_verify < min_verification_steps:
+            raise ValueError(
+                f"todo_list must include at least {min_verification_steps} verification/validation tasks."
+            )
+        if "router qa" not in todo_list[-1].lower():
+            raise ValueError("The final todo item must route results back to router QA for approval.")
+        missing_tools = {tool for tool in commands_present if tool in ALLOWED_TOOLS and tool not in covered_tools}
+        if missing_tools:
+            raise ValueError(
+                f"todo_list must include tasks referencing each tool in route_plan. Missing: {sorted(missing_tools)}"
+            )
+        if "router qa" not in covered_tools:
+            raise ValueError("todo_list must include an explicit router QA review task.")
 
         thinking_outline = payload["thinking_outline"]
-        if not isinstance(thinking_outline, list) or len(thinking_outline) < 4:
-            raise ValueError("thinking_outline must be a list with at least four reasoning steps.")
+        if not isinstance(thinking_outline, list) or len(thinking_outline) < min_thinking_steps:
+            raise ValueError(
+                f"thinking_outline must be a list with at least {min_thinking_steps} reasoning steps."
+            )
         verification_steps = 0
         for step in thinking_outline:
             if not isinstance(step, str) or len(step.strip()) < 10:
@@ -722,8 +1013,10 @@ class GeminiRouterDatasetBuilder:
             lowered = stripped.lower()
             if any(keyword in lowered for keyword in VERIFY_KEYWORDS):
                 verification_steps += 1
-        if verification_steps < 2:
-            raise ValueError("thinking_outline must include at least two explicit verification or validation steps.")
+        if verification_steps < min_verification_steps:
+            raise ValueError(
+                f"thinking_outline must include at least {min_verification_steps} explicit verification or validation steps."
+            )
 
         handoff_plan = payload["handoff_plan"]
         if not isinstance(handoff_plan, str) or len(handoff_plan.strip()) < 40:
@@ -744,12 +1037,18 @@ class GeminiRouterDatasetBuilder:
             raise ValueError("Route rationale must mention blue when general-search is used.")
 
 
-    def _compute_quality_score(self, payload: Dict[str, Any], theme: str) -> float:
+    def _compute_quality_score(
+        self,
+        payload: Dict[str, Any],
+        theme: str,
+        difficulty: str,
+    ) -> float:
         user_query = payload["user_query"].strip()
         task_summary = payload["task_summary"].strip()
         route_plan = payload["route_plan"]
         thinking_outline = payload["thinking_outline"]
         tags = payload.get("tags", [])
+        todo_list = payload.get("todo_list", [])
 
         contexts: List[str] = []
         for cmd in route_plan:
@@ -771,14 +1070,36 @@ class GeminiRouterDatasetBuilder:
         domain_hits = sum(1 for keyword in DOMAIN_KEYWORDS if keyword in lowered_query)
         theme_lower = theme.lower()
         theme_hit = 1 if theme_lower in lowered_query or any(theme_lower in tag.lower() for tag in tags) else 0
+        todo_len = len(todo_list)
+        todo_verify = sum(
+            1
+            for todo in todo_list
+            if isinstance(todo, str) and any(keyword in todo.lower() for keyword in VERIFY_KEYWORDS)
+        )
+        todo_router = 1 if todo_list and "router qa" in todo_list[-1].lower() else 0
+
+        difficulty_scaler = {
+            "advanced": 1.0,
+            "intermediate": 0.8,
+            "introductory": 0.65,
+        }
+        scale = difficulty_scaler.get(difficulty, 1.0)
+        user_norm = 150.0 * scale
+        summary_norm = 80.0 * scale
+        context_norm = 80.0 * scale
+        expected_verification = 2 if difficulty == "advanced" else 1
+        expected_todos = 5 if difficulty == "advanced" else (4 if difficulty == "intermediate" else 3)
 
         score = 0.0
-        score += min(len(user_query) / 150.0, 1.5) * 20
-        score += min(len(task_summary) / 80.0, 1.0) * 10
-        score += min(avg_context_len / 80.0, 1.5) * 25
-        score += min(verification_steps / 3.0, 1.0) * 20
+        score += min(len(user_query) / user_norm, 1.5) * 20
+        score += min(len(task_summary) / summary_norm, 1.0) * 10
+        score += min(avg_context_len / context_norm, 1.5) * 25
+        score += min(verification_steps / max(expected_verification, 1), 1.2) * 20
         score += min(domain_hits, 6) * 3
         score += theme_hit * 7
+        score += min(todo_len / max(expected_todos, 1), 1.3) * 8
+        score += min(todo_verify / max(expected_verification, 1), 1.1) * 4
+        score += todo_router * 3
 
         return max(0.0, min(score, 100.0))
 
@@ -852,6 +1173,8 @@ class DatasetOrchestrator:
         self._variant_counts: Dict[str, int] = {variant["name"]: 0 for variant in ROUTE_VARIANTS}
         self._theme_counts: Dict[str, int] = {}
         self._theme_alerts: set[str] = set()
+        self._difficulty_counts: Dict[str, int] = {}
+        self._difficulty_alerted = False
         self._imbalance_warned = False
         self._last_signature: Optional[Tuple[str, ...]] = None
 
@@ -984,6 +1307,17 @@ class DatasetOrchestrator:
                     f"[yellow]Theme '{theme_token}' appearing frequently ({self._theme_counts[theme_token]} times). Inject variety.[/yellow]"
                 )
                 self._theme_alerts.add(theme_token)
+
+        diff = example.difficulty
+        self._difficulty_counts[diff] = self._difficulty_counts.get(diff, 0) + 1
+        total_diff = sum(self._difficulty_counts.values())
+        if total_diff >= 8 and not self._difficulty_alerted:
+            adv_ratio = self._difficulty_counts.get("advanced", 0) / total_diff
+            if adv_ratio > 0.75 or adv_ratio < 0.25:
+                self.console.log(
+                    "[yellow]Difficulty mix skew detected (advanced ratio {:.0%}). Consider prompting for more varied tiers.[/yellow]".format(adv_ratio)
+                )
+                self._difficulty_alerted = True
 # End Patch
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -1089,6 +1423,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     console.print(f"[bold]Concurrency:[/] {args.concurrency}")
     console.print(f"[bold]Start index:[/] {start_index}")
+    console.print(
+        "[bold]Difficulty mix:[/] adaptive rotation across introductory/intermediate/advanced tiers"
+    )
 
     if existing_records > 0 and args.start_index is None:
         console.print(

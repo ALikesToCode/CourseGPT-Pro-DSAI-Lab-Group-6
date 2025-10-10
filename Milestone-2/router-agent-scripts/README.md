@@ -23,6 +23,11 @@ dispatch a user request to the appropriate tools:
   /math, and /code collaborate, verify outputs, and recover from failures.
 - Enforces strict prompt quality checks: minimum query lengths, domain-specific
   terminology, detailed route contexts, and multiple verification steps.
+- Includes a diversified difficulty mix (introductory / intermediate /
+  advanced) so the router learns to handle everyday queries alongside
+  high-stakes graduate prompts.
+- Records a `todo_list` plan so the router can brief sub-agents with actionable
+  checkboxes and a concluding router QA review.
 
 ### Files
 
@@ -85,6 +90,13 @@ Each JSON line produced by the script conforms to:
     "4. Cross-check results against authoritative references and summarize convergence behaviour."
   ],
   "handoff_plan": "/general-search -> /math -> /code -> router QA; if proofs fail, loop back to /general-search for alternative theory, then re-validate.",
+  "todo_list": [
+    "- [ ] /general-search: collect transformer sparsification baselines (verification: cross-check citations).",
+    "- [ ] /math: derive KKT conditions for spectral norm and Lipschitz constraints.",
+    "- [ ] /code: run JAX Hutchinson-trace experiment monitoring FID and spectral norm metrics.",
+    "- [ ] /general-search: verify all references against arXiv and MIT OCW sources.",
+    "- [ ] router QA: validate proofs and metrics before issuing the final response."
+  ],
   "difficulty": "advanced",
   "tags": ["transformers", "spectral_analysis"],
   "quality_score": 92.4
@@ -105,12 +117,30 @@ Key constraints enforced by the generator:
   arrows and verification/fallback behaviour. Use explicit ASCII arrows (`/general-search -> /math -> /code -> router QA`).
 - `quality_score` encodes heuristic quality metrics (context detail, verification density,
   domain terminology) to support downstream filtering.
-- `user_query` (≥100 chars) and `task_summary` (≥50 chars) must sound like graduate research or
-  competition prep requests and include domain-specific terminology.
+- `user_query` must follow the difficulty tier (≥60 chars for introductory,
+  ≥80 for intermediate, ≥100 for advanced) and weave in domain-specific terminology.
+- `task_summary` mirrors the tier-specific lengths (≥35 / ≥40 / ≥50 chars respectively).
 - `route_plan` contexts must each provide ≥40 characters with precise notation, algorithms,
   or constraints, include at least two domain-specific keywords (chosen from the glossary enumerated in the prompt), and avoid introductory patterns.
 - Avoid banned phrases and trivial tasks (quadratic formula, binary search, Fibonacci, hello world, two-sum, etc.).
-- `difficulty` is always `advanced` to align with high-stakes routing for an 8B model.
+- `difficulty` rotates between `introductory`, `intermediate`, and `advanced` so the router learns to triage both everyday and expert tasks.
+- `todo_list` contains 3-8 checkbox-style strings (`- [ ] ...`) that cover every tool, include
+  verification items, and end with a router QA consolidation task.
+- Route plans should not repeat the same tool consecutively; diversify order when the workflow allows.
+- `id` values are auto-assigned sequentially (`router_0000`, `router_0001`, …) by the generator.
+- When possible, vary tool order across examples so the router sees `/math -> /code -> /general-search` and other permutations, not just a fixed sequence.
+
+#### Difficulty guidelines
+
+- **Advanced**: >100-character user queries, two or more verification steps,
+  route contexts with at least two glossary keywords plus explicit metrics, and
+  5-8 todo items ending in router QA.
+- **Intermediate**: ≥80-character user queries with at least one glossary keyword,
+  contexts that state evaluation criteria (accuracy, complexity, safety), and
+  4-7 todo items.
+- **Introductory**: ≥60-character user queries that remain ambitious but
+  approachable, at least one verification step, contexts that still justify
+  tool choice with precise descriptors, and 3-6 todo items guiding the learner.
 
 ### CLI options
 
