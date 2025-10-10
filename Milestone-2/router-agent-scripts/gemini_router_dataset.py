@@ -842,6 +842,9 @@ class GeminiRouterDatasetBuilder:
             route_context_line = (
                 "Each route_plan context must be ≥40 characters, include at least two glossary tokens, and cite concrete constraints or metrics—never reference introductory tasks."
             )
+            todo_verify_text = (
+                "Include at least two verification todo items (e.g., '- [ ] /math: verify derivation aligns with implementation')."
+            )
             todo_line = (
                 "todo_list must include 5-8 entries formatted as '- [ ] /tool: action ...', covering every tool, incorporating verification steps, and ending with a router QA review task."
             )
@@ -858,6 +861,9 @@ class GeminiRouterDatasetBuilder:
             route_context_line = (
                 "Each route_plan context must be ≥35 characters, include at least one glossary token, and specify evaluation criteria or constraints (e.g., time complexity, accuracy threshold, safety margin)."
             )
+            todo_verify_text = (
+                "Include at least one verification todo item (e.g., '- [ ] /code: validate outputs against analytical baseline')."
+            )
             todo_line = (
                 "todo_list must include 4-7 entries using '- [ ] /tool: ...' phrasing, referencing each tool at least once and closing with a router QA validation task."
             )
@@ -873,6 +879,9 @@ class GeminiRouterDatasetBuilder:
             verification_text = "AT LEAST ONE"
             route_context_line = (
                 "Each route_plan context must be ≥30 characters, include at least one glossary token or precise descriptor, and articulate why the tool is necessary."
+            )
+            todo_verify_text = (
+                "Include at least one verification todo item to sanity-check outputs before router QA."
             )
             todo_line = (
                 "todo_list must include 3-6 entries formatted '- [ ] ...', guiding the user through the tool sequence and concluding with router QA approval."
