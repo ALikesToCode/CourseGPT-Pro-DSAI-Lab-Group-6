@@ -1641,11 +1641,51 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
             " number of records in the output file."
         ),
     )
+    parser.add_argument(
+        "--repair-ids",
+        type=Path,
+        help=(
+            "If set, renumber the JSONL file so ids follow router_XXXX order in file sequence and exit."
+        ),
+    )
+    parser.add_argument(
+        "--repair-start",
+        type=int,
+        default=0,
+        help="Starting integer to use when repairing ids (default: 0 → router_0000).",
+    )
     return parser.parse_args(argv)
 
 
 def ensure_output_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def repair_jsonl_ids(file_path: Path, start: int) -> None:
+    if not file_path.exists():
+        raise FileNotFoundError(f"Cannot repair ids: {file_path} does not exist")
+
+    with file_path.open("r", encoding="utf-8") as reader:
+        lines = [line.rstrip("\n") for line in reader if line.strip()]
+
+    repaired_lines: List[str] = []
+    for offset, line in enumerate(lines):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Line {offset + 1} in {file_path} is not valid JSON and cannot be repaired"
+            ) from exc
+
+        payload["id"] = f"router_{start + offset:04d}"
+        repaired_lines.append(json.dumps(payload, ensure_ascii=True))
+
+    backup_path = file_path.with_suffix(file_path.suffix + ".bak")
+    file_path.rename(backup_path)
+    with file_path.open("w", encoding="utf-8") as writer:
+        writer.write("\n".join(repaired_lines) + "\n")
+
+    print(f"Repaired ids written to {file_path} (backup saved as {backup_path})")
 
 
 def _count_existing_rows(path: Path) -> int:
@@ -1658,6 +1698,11 @@ def _count_existing_rows(path: Path) -> int:
 def main(argv: Optional[List[str]] = None) -> None:
     load_dotenv()
     args = parse_args(argv)
+
+    if args.repair_ids:
+        repair_jsonl_ids(args.repair_ids, args.repair_start)
+        return
+
     console = _get_console()
     console.rule("[bold cyan]Gemini Router Dataset Builder[/bold cyan]")
     console.print(f"[bold]Model:[/] {args.model}")
