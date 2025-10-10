@@ -193,3 +193,6 @@ usage: gemini_router_dataset.py [-h] [--count COUNT] [--output OUTPUT]
   of existing lines unless `--start-index` is specified.
 - Failures are retried with exponential backoff and summarized at the end, so
   failed indices can be regenerated without disturbing already written rows.
+
+
+Dataset link:https://huggingface.co/datasets/Alovestocode/Router-agent-data

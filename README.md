@@ -137,3 +137,26 @@ For the initial phases of development and experimentation, we plan to utilize ac
 * **Primary Platforms:** Development will primarily be conducted on **Google Colab** and **Kaggle Notebooks**. These platforms provide free access to powerful GPUs (e.g., NVIDIA T4, P100), which is sufficient for fine-tuning models, running experiments, and developing the core components of our system without incurring initial infrastructure costs.  
 * **Contingency for Scale:** If the project requires more substantial or sustained computational resources (e.g., for larger model training or hosting persistent endpoints for demonstration), we will leverage the **Google Cloud Platform (GCP)**. Specifically, we may use **Vertex AI** for managed training jobs and model deployment, funded by available free trial credits.
 
+## Hugging Face Dataset Upload
+
+To publish the router-training dataset produced under `Milestone-2/router-agent-scripts`:
+
+1. Ensure `output.jsonl` is up to date and run the ID repair utility if needed:
+   ```bash
+   python Milestone-2/router-agent-scripts/gemini_router_dataset.py \
+     --repair-ids Milestone-2/router-agent-scripts/output.jsonl --repair-start 0
+   ```
+2. Authenticate with Hugging Face:
+   ```bash
+   pip install --upgrade "huggingface_hub[cli]"
+   huggingface-cli login
+   ```
+3. Upload the dataset and accompanying card (stored in `hf_dataset_card.md`):
+   ```bash
+   huggingface-cli upload \
+     --repo-type dataset \
+     --repo-id Alovestocode/Router-agent-data \
+     Milestone-2/router-agent-scripts/output.jsonl:output.jsonl \
+     hf_dataset_card.md:README.md
+   ```
+4. After the dataset is live, update this README with the final Hugging Face URL.
