@@ -14,6 +14,7 @@ Usage:
 Environment:
     - Place GOOGLE_API_KEY (or GEMINI_API_KEY) in a .env or shell env.
     - Optionally set GEMINI_MODEL_NAME for the Gemini 2.5 Pro model identifier.
+    - Requires the Google Gen AI `google-genai` SDK.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ import textwrap
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 try:
     from dotenv import load_dotenv
@@ -38,14 +39,30 @@ except ImportError:  # pragma: no cover - optional dependency.
 
 
 try:
-    import google.generativeai as genai
-    from google.api_core import exceptions as google_exceptions
+    from google import genai
+    from google.genai import errors as genai_errors
+    from google.genai import types as genai_types
 except ImportError as exc:  # pragma: no cover - handled at runtime.
     genai = None  # type: ignore
-    google_exceptions = None  # type: ignore
+    genai_errors = None  # type: ignore
+    genai_types = None  # type: ignore
     _IMPORT_ERROR = exc
 else:
     _IMPORT_ERROR = None
+
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+except ImportError as exc:  # pragma: no cover - handled at runtime.
+    Console = None  # type: ignore
+    Panel = None  # type: ignore
+    Progress = None  # type: ignore
+    SpinnerColumn = None  # type: ignore
+    TextColumn = None  # type: ignore
+    _RICH_IMPORT_ERROR = exc
+else:
+    _RICH_IMPORT_ERROR = None
 
 
 ALLOWED_TOOLS = ["/math", "/code", "/general-search"]
@@ -123,10 +140,21 @@ def _infer_api_key() -> Optional[str]:
 def _ensure_packages() -> None:
     if _IMPORT_ERROR is not None:
         raise SystemExit(
-            "Missing google-generativeai dependency. Install it via:\n"
-            "  pip install google-generativeai python-dotenv\n"
+            "Missing google-genai dependency. Install it via:\n"
+            "  pip install google-genai python-dotenv\n"
             f"Original import error: {_IMPORT_ERROR}"
         )
+
+
+def _get_console() -> "Console":
+    if _RICH_IMPORT_ERROR is not None:
+        raise SystemExit(
+            "Missing rich dependency. Install it via:\n"
+            "  pip install rich\n"
+            f"Original import error: {_RICH_IMPORT_ERROR}"
+        )
+    assert Console is not None  # For type checkers.
+    return Console()
 
 
 @dataclass
@@ -168,90 +196,59 @@ class GeminiRouterDatasetBuilder:
         temperature: float,
         max_retries: int,
         sleep_base: float,
-        offline: bool,
+        console: Optional["Console"] = None,
     ) -> None:
         self.model_name = model_name
         self.seed = seed
         self.temperature = temperature
         self.max_retries = max_retries
         self.sleep_base = sleep_base
-        self.offline = offline
+        self.console = console or _get_console()
         self._random = random.Random(seed)
-        self._model = None
-        if not offline:
-            _ensure_packages()
-            api_key = _infer_api_key()
-            if not api_key:
-                raise SystemExit(
-                    "Gemini API key not found. Set GOOGLE_API_KEY or GEMINI_API_KEY."
-                )
-            genai.configure(api_key=api_key)
-            self._model = genai.GenerativeModel(model_name=model_name)
+        self._client = None
+        _ensure_packages()
+        api_key = _infer_api_key()
+        if not api_key:
+            raise SystemExit(
+                "Gemini API key not found. Set GOOGLE_API_KEY or GEMINI_API_KEY."
+            )
+        self._client = genai.Client(api_key=api_key)
 
-    def build_dataset(self, count: int) -> List[RouterExample]:
+    def build_dataset(
+        self,
+        count: int,
+        progress_cb: Optional[Callable[[int, int], None]] = None,
+    ) -> List[RouterExample]:
         examples: List[RouterExample] = []
         variants = ROUTE_VARIANTS.copy()
         for idx in range(count):
             variant = variants[idx % len(variants)]
-            example = (
-                self._offline_example(idx, variant)
-                if self.offline
-                else self._generate_example(idx, variant)
-            )
+            example = self._generate_example(idx, variant)
             examples.append(example)
+            if progress_cb:
+                progress_cb(idx + 1, count)
         return examples
-
-    def _offline_example(self, idx: int, variant: Dict[str, Any]) -> RouterExample:
-        """Generate deterministic placeholder data without Gemini."""
-        modes = GENERAL_SEARCH_MODES
-        commands = []
-        for name in variant["required"]:
-            if name == "/math":
-                commands.append(
-                    "/math(Solve the symbolic recurrence from the offline stub scenario.)"
-                )
-            elif name == "/code":
-                commands.append(
-                    "/code(Write Python to simulate the recurrence across 10 iterations.)"
-                )
-            else:
-                mode = modes[idx % len(modes)]
-                commands.append(
-                    f"/general-search(Gather authoritative references for the recurrence, mode={mode})"
-                )
-        rationale = "Offline mode stub for development without Gemini calls."
-        if any(cmd.startswith("/general-search") for cmd in commands):
-            rationale += " Includes the blue general-search placeholder."
-        return RouterExample(
-            id=f"router_offline_{idx:04d}",
-            user_query=f"Offline synthetic request for {variant['name']}.",
-            task_summary="Offline synthetic placeholder example.",
-            route_plan=commands,
-            route_rationale=rationale,
-            expected_artifacts=[
-                "symbolic_math_steps",
-                "python_validation",
-                "reference_summary",
-            ],
-            difficulty="introductory",
-            tags=[variant["name"], "offline"],
-        )
 
     def _generate_example(self, idx: int, variant: Dict[str, Any]) -> RouterExample:
         prompt = self._build_prompt(idx, variant)
         for attempt in range(1, self.max_retries + 1):
             try:
-                assert self._model is not None  # mypy hint.
-                generation_config = {
-                    "temperature": self.temperature,
-                    "response_mime_type": "application/json",
-                }
-                response = self._model.generate_content(
-                    prompt,
-                    generation_config=generation_config,
+                assert self._client is not None and genai_types is not None
+                config = genai_types.GenerateContentConfig(
+                    temperature=self.temperature,
+                    response_mime_type="application/json",
                 )
-                payload = response.text or ""
-                data = _as_json(payload)
+                response = self._client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,
+                )
+                payload_obj = getattr(response, "parsed", None)
+                if isinstance(payload_obj, dict):
+                    data = payload_obj
+                else:
+                    payload_text = getattr(response, "text", "") or ""
+                    data = _as_json(payload_text)
                 self._validate_payload(data, variant)
                 return RouterExample(
                     id=data["id"],
@@ -265,14 +262,14 @@ class GeminiRouterDatasetBuilder:
                 )
             except (json.JSONDecodeError, AssertionError, KeyError, ValueError) as exc:
                 self._handle_retry(exc, attempt, idx)
-            except google_exceptions.GoogleAPICallError as exc:  # pragma: no cover
+            except genai_errors.APIError as exc:  # pragma: no cover
                 self._handle_retry(exc, attempt, idx)
         raise RuntimeError(f"Failed to synthesize example after {self.max_retries} tries.")
 
     def _handle_retry(self, exc: Exception, attempt: int, idx: int) -> None:
         wait = self.sleep_base * (2 ** (attempt - 1))
         reason = f"[example {idx}] attempt {attempt} failed: {exc}"
-        print(reason, file=sys.stderr)
+        self.console.log(f"[yellow]{reason}[/yellow]")
         time.sleep(wait)
 
     def _build_prompt(self, idx: int, variant: Dict[str, Any]) -> str:
@@ -418,11 +415,6 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=7,
         help="Random seed for deterministic variant ordering.",
     )
-    parser.add_argument(
-        "--offline",
-        action="store_true",
-        help="Emit deterministic stub output without calling Gemini.",
-    )
     return parser.parse_args(argv)
 
 
@@ -433,20 +425,69 @@ def ensure_output_dir(path: Path) -> None:
 def main(argv: Optional[List[str]] = None) -> None:
     load_dotenv()
     args = parse_args(argv)
-    builder = GeminiRouterDatasetBuilder(
-        model_name=args.model,
-        seed=args.seed,
-        temperature=args.temperature,
-        max_retries=args.max_retries,
-        sleep_base=args.sleep_base,
-        offline=args.offline,
-    )
-    dataset = builder.build_dataset(args.count)
-    ensure_output_dir(args.output)
-    with args.output.open("w", encoding="utf-8") as stream:
-        for row in dataset:
-            stream.write(row.to_json() + "\n")
-    print(f"Wrote {len(dataset)} router examples to {args.output}")
+    console = _get_console()
+    console.rule("[bold cyan]Gemini Router Dataset Builder[/bold cyan]")
+    console.print(f"[bold]Model:[/] {args.model}")
+    console.print(f"[bold]Examples:[/] {args.count}")
+    console.print(f"[bold]Output file:[/] {args.output}")
+
+    if args.count <= 0:
+        console.print(
+            Panel("`--count` must be a positive integer.", border_style="red", title="Invalid count")
+        )
+        sys.exit(2)
+
+    builder: Optional[GeminiRouterDatasetBuilder] = None
+    try:
+        builder = GeminiRouterDatasetBuilder(
+            model_name=args.model,
+            seed=args.seed,
+            temperature=args.temperature,
+            max_retries=args.max_retries,
+            sleep_base=args.sleep_base,
+            console=console,
+        )
+        assert Progress is not None and SpinnerColumn is not None and TextColumn is not None
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            TextColumn("{task.completed}/{task.total}"),
+            console=console,
+        ) as progress:
+            task_id = progress.add_task("Synthesizing router examples", total=args.count)
+
+            def progress_cb(completed: int, _total: int) -> None:
+                progress.update(task_id, completed=completed)
+
+            dataset = builder.build_dataset(args.count, progress_cb=progress_cb)
+
+        ensure_output_dir(args.output)
+        with console.status("Writing dataset to disk...", spinner="dots"):
+            with args.output.open("w", encoding="utf-8") as stream:
+                for row in dataset:
+                    stream.write(row.to_json() + "\n")
+
+        console.print(
+            Panel(
+                f"Saved {len(dataset)} router examples to {args.output.resolve()}",
+                border_style="green",
+                title="Generation complete",
+            )
+        )
+    except SystemExit:
+        raise
+    except Exception as exc:
+        error_panel = Panel(str(exc), border_style="red", title="Generation failed")
+        console.print(error_panel)
+        sys.exit(1)
+    finally:
+        if builder is not None:
+            client = getattr(builder, "_client", None)
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:  # pragma: no cover - best effort cleanup.
+                    pass
 
 
 if __name__ == "__main__":

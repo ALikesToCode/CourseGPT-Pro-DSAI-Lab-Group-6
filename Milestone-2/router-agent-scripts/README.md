@@ -1,8 +1,9 @@
 ## Gemini Router Dataset Script
 
-This folder holds the Gemini-powered script that synthesizes router-training
-examples for the CourseGPT-Pro agentic orchestrator. Each generated record
-teaches the router how to dispatch a user request to the appropriate tools:
+This folder holds the Gemini-powered script (built on the Google Gen AI
+`google-genai` SDK) that synthesizes router-training examples for the
+CourseGPT-Pro agentic orchestrator. Each generated record teaches the router
+how to dispatch a user request to the appropriate tools:
 
 - `/math(context)` for symbolic or numeric math reasoning.
 - `/code(context)` for Python-heavy coding steps.
@@ -18,7 +19,7 @@ teaches the router how to dispatch a user request to the appropriate tools:
 
 1. **Install dependencies (Python ≥ 3.9)**:
    ```bash
-   pip install google-generativeai python-dotenv
+   pip install -r requirements.txt
    ```
 2. **Configure `.env` (or export vars)**:
    ```bash
@@ -31,10 +32,10 @@ teaches the router how to dispatch a user request to the appropriate tools:
    ```bash
    python gemini_router_dataset.py --count 24 --output data/router_dataset.jsonl
    ```
-4. **Dry-run without Gemini (sanity check)**:
-   ```bash
-   python gemini_router_dataset.py --offline --count 4
-   ```
+
+During execution the script displays a Rich-powered progress spinner for Gemini
+calls and summarizes the output location once writing completes. Validation
+errors or API issues are surfaced in highlighted panels for quick diagnosis.
 
 ### Dataset shape
 
@@ -76,12 +77,9 @@ usage: gemini_router_dataset.py [-h] [--count COUNT] [--output OUTPUT]
                                 [--model MODEL] [--temperature TEMPERATURE]
                                 [--max-retries MAX_RETRIES]
                                 [--sleep-base SLEEP_BASE] [--seed SEED]
-                                [--offline]
 ```
 
 - `--temperature` adjusts Gemini's creativity when constructing examples.
-- `--offline` skips Gemini calls and emits deterministic stubs while preserving
-  the route-plan structure—handy for CI smoke tests.
 
 ### Extending the generator
 
