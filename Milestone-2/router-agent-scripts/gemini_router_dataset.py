@@ -126,7 +126,14 @@ ROUTER_DATASET_SCHEMA = {
     "difficulty": "introductory | intermediate | advanced",
     "tags": "List of topical tags or skills.",
     "quality_score": "Heuristic score (0-100) reflecting prompt richness and verification coverage.",
-    "todo_list": "Ordered list of granular TODO items the router uses to brief sub-agents and track progress."
+    "todo_list": "Ordered list of granular TODO items the router uses to brief sub-agents and track progress.",
+    "acceptance_criteria": "Bullet list of pass/fail checks for graders.",
+    "metrics": "Dictionary naming primary/secondary metrics with computation guidance.",
+    "compute_budget": "Resource envelope (GPU minutes, CPU minutes, VRAM).",
+    "repro": "Reproducibility contract (seed, determinism flags, frameworks).",
+    "requires_browse": "Boolean indicating whether the task expects literature search.",
+    "citation_policy": "Explicit citation expectations (e.g., minimum # of arXiv IDs).",
+    "io_schema": "Declared input/output artifacts and file formats."
 }
 
 
@@ -331,6 +338,43 @@ TOOL_TODO_TEMPLATES = {
     "router qa": "- [ ] router QA: consolidate tool outputs, verify citations, and approve the response.",
 }
 
+DEFAULT_ACCEPTANCE_CRITERIA = [
+    "All expected artifacts enumerated in `expected_artifacts` are delivered and referenced in the final report.",
+    "Primary metrics defined in `metrics` are computed, plotted, and meet the stated thresholds.",
+    "Citations satisfy `citation_policy`, with persistent identifiers included in the report.",
+]
+
+DEFAULT_METRICS = {
+    "primary": [
+        "Define at least one domain-specific performance metric with formulas and acceptance thresholds.",
+    ],
+    "secondary": [
+        "Report runtime/memory usage and summarize failure cases discovered during evaluation.",
+    ],
+}
+
+DEFAULT_COMPUTE_BUDGET = {
+    "gpu_minutes": 30,
+    "cpu_minutes": 10,
+    "vram_gb": 16,
+}
+
+DEFAULT_REPRO = {
+    "seed": 1337,
+    "deterministic": True,
+    "framework": "specify (pytorch|jax|numpy)",
+}
+
+DEFAULT_IO_SCHEMA = {
+    "artifacts": [
+        "report.md",
+        "figures/*.png",
+        "metrics.json",
+        "code/*.py",
+    ],
+    "logs": "logs/run.log",
+}
+
 
 def _contains_domain_keyword(text: str) -> bool:
     lowered = text.lower()
@@ -398,6 +442,13 @@ class RouterExample:
     difficulty: str
     tags: List[str]
     quality_score: float
+    acceptance_criteria: List[str]
+    metrics: Dict[str, Any]
+    compute_budget: Dict[str, Any]
+    repro: Dict[str, Any]
+    requires_browse: bool
+    citation_policy: str
+    io_schema: Dict[str, Any]
 
     def to_json(self) -> str:
         return json.dumps(
@@ -414,6 +465,13 @@ class RouterExample:
                 "difficulty": self.difficulty,
                 "tags": self.tags,
                 "quality_score": round(self.quality_score, 2),
+                "acceptance_criteria": self.acceptance_criteria,
+                "metrics": self.metrics,
+                "compute_budget": self.compute_budget,
+                "repro": self.repro,
+                "requires_browse": self.requires_browse,
+                "citation_policy": self.citation_policy,
+                "io_schema": self.io_schema,
             },
             ensure_ascii=True,
         )
@@ -514,6 +572,13 @@ class GeminiRouterDatasetBuilder:
                     difficulty=difficulty_value,
                     tags=data["tags"],
                     quality_score=quality_score,
+                    acceptance_criteria=data["acceptance_criteria"],
+                    metrics=data["metrics"],
+                    compute_budget=data["compute_budget"],
+                    repro=data["repro"],
+                    requires_browse=data["requires_browse"],
+                    citation_policy=data["citation_policy"],
+                    io_schema=data["io_schema"],
                 )
             except (json.JSONDecodeError, AssertionError, KeyError, ValueError) as exc:
                 self._handle_retry(exc, attempt, idx)
@@ -667,6 +732,63 @@ class GeminiRouterDatasetBuilder:
                 todo_list = todo_list[: todo_max - 1] + [todo_list[-1]]
 
         payload["todo_list"] = todo_list
+
+        acceptance = payload.get("acceptance_criteria")
+        if not isinstance(acceptance, list) or not acceptance:
+            payload["acceptance_criteria"] = DEFAULT_ACCEPTANCE_CRITERIA.copy()
+        else:
+            payload["acceptance_criteria"] = [str(item).strip() for item in acceptance if str(item).strip()]
+
+        metrics = payload.get("metrics")
+        if not isinstance(metrics, dict) or not metrics:
+            payload["metrics"] = json.loads(json.dumps(DEFAULT_METRICS))
+        else:
+            primary = metrics.get("primary")
+            secondary = metrics.get("secondary")
+            if not isinstance(primary, list) or not primary:
+                metrics["primary"] = DEFAULT_METRICS["primary"].copy()
+            if not isinstance(secondary, list) or not secondary:
+                metrics["secondary"] = DEFAULT_METRICS["secondary"].copy()
+            payload["metrics"] = metrics
+
+        compute_budget = payload.get("compute_budget")
+        if not isinstance(compute_budget, dict) or not compute_budget:
+            payload["compute_budget"] = DEFAULT_COMPUTE_BUDGET.copy()
+        else:
+            payload["compute_budget"] = {
+                "gpu_minutes": compute_budget.get("gpu_minutes", DEFAULT_COMPUTE_BUDGET["gpu_minutes"]),
+                "cpu_minutes": compute_budget.get("cpu_minutes", DEFAULT_COMPUTE_BUDGET["cpu_minutes"]),
+                "vram_gb": compute_budget.get("vram_gb", DEFAULT_COMPUTE_BUDGET["vram_gb"]),
+            }
+
+        repro = payload.get("repro")
+        if not isinstance(repro, dict) or not repro:
+            payload["repro"] = DEFAULT_REPRO.copy()
+        else:
+            payload["repro"] = {
+                "seed": repro.get("seed", DEFAULT_REPRO["seed"]),
+                "deterministic": repro.get("deterministic", DEFAULT_REPRO["deterministic"]),
+                "framework": repro.get("framework", DEFAULT_REPRO["framework"]),
+            }
+
+        requires_browse = payload.get("requires_browse")
+        payload["requires_browse"] = bool(requires_browse) if isinstance(requires_browse, bool) else True
+
+        citation_policy = payload.get("citation_policy")
+        if not isinstance(citation_policy, str) or not citation_policy.strip():
+            payload["citation_policy"] = "Cite ≥2 authoritative sources (arXiv DOI/URL) and include them in the final report."
+        else:
+            payload["citation_policy"] = citation_policy.strip()
+
+        io_schema = payload.get("io_schema")
+        if not isinstance(io_schema, dict) or not io_schema:
+            payload["io_schema"] = json.loads(json.dumps(DEFAULT_IO_SCHEMA))
+        else:
+            artifacts = io_schema.get("artifacts")
+            if not isinstance(artifacts, list) or not artifacts:
+                io_schema["artifacts"] = DEFAULT_IO_SCHEMA["artifacts"].copy()
+            io_schema.setdefault("logs", DEFAULT_IO_SCHEMA["logs"])
+            payload["io_schema"] = io_schema
 
 
     def _build_prompt(
@@ -997,6 +1119,53 @@ class GeminiRouterDatasetBuilder:
             )
         if "router qa" not in covered_tools:
             raise ValueError("todo_list must include an explicit router QA review task.")
+
+        acceptance = payload["acceptance_criteria"]
+        if not isinstance(acceptance, list) or not acceptance:
+            raise ValueError("acceptance_criteria must be a non-empty list of success checks.")
+        for item in acceptance:
+            if not isinstance(item, str) or len(item.strip()) < 10:
+                raise ValueError("Each acceptance criterion must be a descriptive string (>=10 chars).")
+
+        metrics = payload["metrics"]
+        if not isinstance(metrics, dict):
+            raise ValueError("metrics must be a dictionary with primary/secondary entries.")
+        primary = metrics.get("primary")
+        secondary = metrics.get("secondary")
+        if not isinstance(primary, list) or not primary:
+            raise ValueError("metrics.primary must enumerate domain metrics to compute.")
+        if not isinstance(secondary, list) or not secondary:
+            raise ValueError("metrics.secondary must enumerate auxiliary diagnostics.")
+        if any(not isinstance(m, str) or not m.strip() for m in primary + secondary):
+            raise ValueError("All metric descriptions must be non-empty strings.")
+
+        compute_budget = payload["compute_budget"]
+        if not isinstance(compute_budget, dict):
+            raise ValueError("compute_budget must be a dictionary with resource estimates.")
+        for key in ("gpu_minutes", "cpu_minutes", "vram_gb"):
+            if key not in compute_budget:
+                raise ValueError(f"compute_budget missing key '{key}'.")
+            if not isinstance(compute_budget[key], (int, float)):
+                raise ValueError(f"compute_budget.{key} must be numeric.")
+
+        repro = payload["repro"]
+        if not isinstance(repro, dict) or "seed" not in repro:
+            raise ValueError("repro must define reproducibility parameters (seed, determinism, framework).")
+
+        if not isinstance(payload["requires_browse"], bool):
+            raise ValueError("requires_browse must be boolean.")
+
+        citation_policy = payload["citation_policy"]
+        if not isinstance(citation_policy, str) or not citation_policy.strip():
+            raise ValueError("citation_policy must be a non-empty string.")
+
+        io_schema = payload["io_schema"]
+        if not isinstance(io_schema, dict):
+            raise ValueError("io_schema must be a dictionary describing deliverables.")
+        if "artifacts" not in io_schema or not isinstance(io_schema["artifacts"], list):
+            raise ValueError("io_schema.artifacts must enumerate expected files.")
+        if any(not isinstance(path, str) or not path.strip() for path in io_schema["artifacts"]):
+            raise ValueError("Each io_schema.artifacts entry must be a non-empty string path.")
 
         thinking_outline = payload["thinking_outline"]
         if not isinstance(thinking_outline, list) or len(thinking_outline) < min_thinking_steps:

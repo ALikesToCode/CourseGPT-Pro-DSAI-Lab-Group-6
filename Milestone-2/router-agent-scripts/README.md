@@ -99,7 +99,21 @@ Each JSON line produced by the script conforms to:
   ],
   "difficulty": "advanced",
   "tags": ["transformers", "spectral_analysis"],
-  "quality_score": 92.4
+  "quality_score": 92.4,
+  "acceptance_criteria": [
+    "All deliverables enumerated in `expected_artifacts` are present in the submitted artifact bundle.",
+    "Provide metric plots/tables demonstrating convergence and cite at least two authoritative sources.",
+    "Document verification steps for each agent hand-off in the final report."
+  ],
+  "metrics": {
+    "primary": ["Residual spectral norm vs. iteration", "FID or KSD trajectory for generated samples"],
+    "secondary": ["Wall-clock minutes per training epoch", "GPU VRAM usage"]
+  },
+  "compute_budget": {"gpu_minutes": 45, "cpu_minutes": 15, "vram_gb": 16},
+  "repro": {"seed": 1337, "deterministic": true, "framework": "pytorch"},
+  "requires_browse": true,
+  "citation_policy": "Cite ≥2 primary sources (arXiv DOI/URL) and mention them in the report.",
+  "io_schema": {"artifacts": ["report.md", "figures/*.png", "metrics.json", "code/*.py"], "logs": "logs/run.log"}
 }
 ```
 
@@ -128,6 +142,8 @@ Key constraints enforced by the generator:
   verification items, and end with a router QA consolidation task.
 - Route plans should not repeat the same tool consecutively; diversify order when the workflow allows.
 - `id` values are auto-assigned sequentially (`router_0000`, `router_0001`, …) by the generator.
+- `acceptance_criteria`, `metrics`, `compute_budget`, `repro`, `citation_policy`, `io_schema`, and
+  `requires_browse` are always present so graders and downstream pipelines can enforce contracts.
 - When possible, vary tool order across examples so the router sees `/math -> /code -> /general-search` and other permutations, not just a fixed sequence.
 
 #### Difficulty guidelines
