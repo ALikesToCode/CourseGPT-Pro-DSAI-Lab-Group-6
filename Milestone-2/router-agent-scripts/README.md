@@ -52,6 +52,11 @@ dispatch a user request to the appropriate tools:
    ```bash
    python gemini_router_dataset.py --count 24 --output data/router_dataset.jsonl --concurrency 4
    ```
+4. **Repair ids in an existing JSONL (optional)**:
+   ```bash
+   python gemini_router_dataset.py --repair-ids data/router_dataset.jsonl --repair-start 0
+   ```
+   (The original file is backed up with a `.bak` suffix before overwriting.)
 
 During execution the script displays a Rich-powered progress spinner for Gemini
 calls and summarizes the output location once writing completes. Validation
