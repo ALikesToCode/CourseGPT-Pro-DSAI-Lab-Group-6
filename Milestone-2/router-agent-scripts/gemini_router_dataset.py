@@ -34,6 +34,7 @@ import sys
 import textwrap
 import time
 import threading
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -488,6 +489,7 @@ class GeminiRouterDatasetBuilder:
         max_retries: int,
         sleep_base: float,
         console: Optional["Console"] = None,
+        freshness_window: int = 6,
     ) -> None:
         self.model_name = model_name
         self.temperature = temperature
@@ -496,6 +498,9 @@ class GeminiRouterDatasetBuilder:
         self.console = console or _get_console()
         self._seed = seed if seed is not None else 7
         self._thread_local: threading.local = threading.local()
+        self._freshness_window = max(1, freshness_window)
+        self._recent_themes: deque[str] = deque(maxlen=self._freshness_window)
+        self._recent_tags: deque[str] = deque(maxlen=self._freshness_window * 2)
 
         _ensure_packages()
         api_key = _infer_api_key()
@@ -513,7 +518,10 @@ class GeminiRouterDatasetBuilder:
         """Select an advanced STEM/AI theme for the user query."""
         rng_seed = (self._seed + 13) * (idx + 3)
         rng = random.Random(rng_seed)
-        return rng.choice(ADVANCED_THEMES)
+        candidates = [theme for theme in ADVANCED_THEMES if theme not in self._recent_themes]
+        if not candidates:
+            candidates = ADVANCED_THEMES
+        return rng.choice(candidates)
 
     def difficulty_for_index(self, idx: int) -> str:
         """Sample a difficulty level for diversified training."""
@@ -552,6 +560,7 @@ class GeminiRouterDatasetBuilder:
                     difficulty,
                     idx,
                     requested_mode,
+                    theme,
                 )
                 self._validate_payload(data, variant, difficulty)
                 difficulty_value = data["difficulty"]
@@ -559,7 +568,7 @@ class GeminiRouterDatasetBuilder:
                 self.console.log(
                     f"[cyan]example {idx} ({difficulty_value}): quality_score={quality_score:.1f}[/cyan]"
                 )
-                return RouterExample(
+                example = RouterExample(
                     id=data["id"],
                     user_query=data["user_query"],
                     task_summary=data["task_summary"],
@@ -580,6 +589,11 @@ class GeminiRouterDatasetBuilder:
                     citation_policy=data["citation_policy"],
                     io_schema=data["io_schema"],
                 )
+                self._recent_themes.append(theme)
+                for tag in example.tags:
+                    if isinstance(tag, str) and tag.strip():
+                        self._recent_tags.append(tag.strip())
+                return example
             except (json.JSONDecodeError, AssertionError, KeyError, ValueError) as exc:
                 self._handle_retry(exc, attempt, idx)
             except genai_errors.APIError as exc:  # pragma: no cover
@@ -616,6 +630,7 @@ class GeminiRouterDatasetBuilder:
         difficulty: str,
         idx: int,
         requested_mode: str,
+        theme: str,
     ) -> None:
         payload["id"] = f"router_{idx:04d}"
 
@@ -726,10 +741,64 @@ class GeminiRouterDatasetBuilder:
             for idx_todo, item in enumerate(todo_list[:-1]):
                 if "router qa" in item.lower():
                     continue
-                del todo_list[idx_todo]
-                break
+                # Prefer removing entries that do not explicitly reference any required tool
+                if not any(tool in item for tool in commands_present):
+                    del todo_list[idx_todo]
+                    break
+                # If all remaining items are tool-specific, skip removal to preserve coverage
             else:
                 todo_list = todo_list[: todo_max - 1] + [todo_list[-1]]
+
+        # Final coverage pass: ensure each tool in route_plan has a corresponding TODO entry
+        for tool in commands_present:
+            if tool in ALLOWED_TOOLS and not any(tool in entry for entry in todo_list):
+                template = TOOL_TODO_TEMPLATES.get(
+                    tool,
+                    f"- [ ] {tool}: execute task, log outputs, and prepare summary.",
+                )
+                todo_list.insert(-1, template)
+
+        # Re-check verification steps after potential mutations
+        todo_verify = sum(
+            1 for item in todo_list if any(keyword in item.lower() for keyword in VERIFY_KEYWORDS)
+        )
+        if todo_verify < min_verification:
+            for idx_todo, item in enumerate(todo_list[:-1]):
+                if todo_verify >= min_verification:
+                    break
+                lowered = item.lower()
+                if any(keyword in lowered for keyword in VERIFY_KEYWORDS):
+                    continue
+                todo_list[idx_todo] = item.rstrip(".") + " (verify results)"
+                todo_verify += 1
+        while todo_verify < min_verification:
+            todo_list.insert(-1, "- [ ] router QA: verify intermediate outputs and cross-check metrics.")
+            todo_verify += 1
+
+        # Ensure TODO list stays within tier-specific bounds after adjustments
+        while len(todo_list) < todo_min:
+            todo_list.insert(
+                -1,
+                "- [ ] /general-search: expand references and validate context with additional sources.",
+            )
+        # When trimming to the max, avoid removing mission-critical tool entries
+        while len(todo_list) > todo_max:
+            removed = False
+            for idx_todo, item in enumerate(todo_list[:-1]):
+                if "router qa" in item.lower():
+                    continue
+                contains_tools = [tool for tool in commands_present if tool in item]
+                # skip removal if this item is the only entry covering a required tool
+                if any(
+                    sum(1 for entry in todo_list if tool in entry) <= 1
+                    for tool in contains_tools
+                ):
+                    continue
+                del todo_list[idx_todo]
+                removed = True
+                break
+            if not removed:
+                break
 
         payload["todo_list"] = todo_list
 
@@ -827,6 +896,10 @@ class GeminiRouterDatasetBuilder:
         )
         glossary_preview = ", ".join(sorted(DOMAIN_KEYWORDS)[:40])
         anti_pattern_preview = ", ".join(ANTI_PATTERNS[:5])
+        recent_theme_list = list(self._recent_themes)
+        recent_tag_list = list(dict.fromkeys(self._recent_tags))
+        recent_themes_str = ", ".join(recent_theme_list) if recent_theme_list else "none (full flexibility)"
+        recent_tags_str = ", ".join(recent_tag_list) if recent_tag_list else "none (introduce fresh tags)"
 
         if difficulty == "advanced":
             user_line = (
@@ -904,58 +977,68 @@ class GeminiRouterDatasetBuilder:
 
         prompt = textwrap.dedent(
             f"""
-            You are Gemini 2.5 Pro creating synthetic router-training data.
-            Generate a single JSON object that follows this schema:
+            You are Gemini 2.5 Pro. Produce one JSON object describing a router-training example. No extra prose.
+
+            ### Scenario Inputs
+            - Variant: {variant['name']} → {variant['description']}
+            - Theme: {theme}
+            - Target difficulty: {difficulty}
+            - Allowed tools: {', '.join(ALLOWED_TOOLS)}
+            - Recent themes within the freshness window ({self._freshness_window}): {recent_themes_str}
+            - Recently used tags (aim for novelty): {recent_tags_str}
+
+            ### JSON Schema (all keys required exactly once)
             {schema_lines}
 
-            Hard rules:
-              * route_plan MUST be an ordered list of tool call strings.
-              * Only use these commands exactly as literals: {', '.join(ALLOWED_TOOLS)}.
-              * When using /general-search, include a mode parameter set to {requested_mode}.
-              * Treat the general search tool as color-coded "blue" and mention this in route_rationale.
-              * When /code is used, explicitly mention Python in the command context.
-              * The request variant is `{variant['name']}` which means: {variant['description']}
-              * {user_line}
-              * {summary_line}
-              * {rigor_line}
-              * {thinking_line}
-              * {tags_line}
-              * {difficulty_line}
-              * Populate expected_artifacts with 3-5 bullet-point style strings covering proofs, code, citations, and verification artifacts.
-              * {todo_verify_text}
-              * {todo_line}
-              * Provide handoff_plan describing agent-to-agent flow (use arrows like "/general-search -> /math -> /code"), including explicit keywords such as "verification", "fallback", or "loop" to describe quality checks.
-              * Route_plan contexts must specify precise notation, algorithm names, library/tooling constraints, and evaluation metrics so sub-agents can execute without ambiguity.
-              * {route_context_line}
-              * {glossary_line}
-              * Never issue identical tools back-to-back in route_plan; merge reasoning instead of repeating the same tool consecutively.
-              * The user_query should read like a graduate researcher or competitive programmer seeking help on a novel experiment, not a basic homework request.
-              * handoff_plan MUST be formatted with ASCII arrows (`->`) connecting the literal tool names and router QA, e.g., "/general-search -> /math -> /code -> router QA (fallback: loop /general-search -> /math)".
-              * Do not paraphrase the arrows with prose (e.g., "then"); the arrow notation itself is mandatory.
-            Anti-patterns to AVOID:
-              * Do NOT create elementary prompts like "derive the quadratic formula" or "implement binary search".
-              * Avoid introductory calculus, routine linear algebra drills, or toy coding warmups.
-              * Do not omit verification requirements, citations, or constraint descriptions.
-              * Use ids shaped like router_{idx:04d}.
+            ### Field requirements
+            - {user_line}
+            - {summary_line}
+            - {rigor_line}
+            - {thinking_line}
+            - `route_rationale` must justify each tool and, whenever /general-search appears, explicitly reference the "blue" general-search agent.
+            - {tags_line}
+            - {difficulty_line}
+            - Populate `expected_artifacts` with 3–5 bullet strings covering proofs, code, citations, and verification outputs.
+            - {todo_verify_text}
+            - {todo_line}
+            - Ensure `todo_list` contains at least one entry for every tool present in `route_plan`, plus a final router QA review item.
+            - `handoff_plan` must use ASCII arrows (`->`) and explicitly mention verification/fallback behavior (e.g., `/general-search -> /math -> /code -> router QA (verification: …; fallback: …)`).
+            - `acceptance_criteria` should list ≥3 pass/fail bullets aligned with metrics and artifacts.
+            - `metrics.primary` and `metrics.secondary` must spell out domain metrics and diagnostics with short computation guidance.
+            - Provide plausible `compute_budget` and `repro` dictionaries (seed, determinism, framework).
+            - State whether browsing is required (`requires_browse`) and provide a concrete `citation_policy` (e.g., “Cite ≥2 arXiv papers with IDs”).
+            - Define `io_schema.artifacts` (report, plots, metrics JSON, code) using non-empty string paths, and set `io_schema.logs` so automation knows what to collect.
 
-            Required command coverage guidance (include each):
-              {chr(10).join(f'- {spec}' for spec in command_specs)}
+            ### Route-planning rules
+            1. route_plan MUST be an ordered list of tool call strings.
+            2. Use tool literals exactly as `/math`, `/code`, `/general-search`.
+            3. When using /general-search, include `mode={requested_mode}` and describe high-authority queries (e.g., `site:arxiv.org`).
+            4. When using /code, explicitly reference Python tooling and runtime validation checks.
+            5. Never emit identical tools consecutively—merge reasoning or expand context instead.
+            6. {route_context_line}
+            7. {glossary_line}
+            8. Treat /general-search as the “blue” tool inside `route_rationale` and justify every hand-off.
+            9. Avoid reusing the exact same theme/tag mix listed above unless no alternatives remain; if you must reuse, explain why in `acceptance_criteria`.
+            10. Example route entries (shuffle order as appropriate): "{route_examples[0]}", "{route_examples[1]}", "{route_examples[2]}".
 
-            Context expectations:
-              * Theme focus: {theme}.
-              * {reference_hints}
-              * {search_hint}
-              * Ensure the user query invites the router to explicitly request rigorous proofs, derivations, or algorithmic analysis.
-              * Make the task description explicit about constraints (e.g., asymptotics, error bounds, convergence guarantees).
-              * Encourage downstream agents to return detailed reasoning traces, verified computations, citations, AND report back to the router for sign-off.
-              * Highlight markers of graduate-level complexity: research-grade citations, multi-constraint optimization, stochastic analysis, or competitive-programming difficulty tiers.
-              * Example route_plan contexts include: "{route_examples[0]}", "{route_examples[1]}", "{route_examples[2]}". Vary tool order when appropriate; not every scenario must start with /general-search.
-              * Example handoff_plan: "/general-search -> /math -> /code -> router QA (verification: run symbolic cross-check; fallback: loop /general-search -> /math to source alternative lemma)."
-              * Example todo_list: ["- [ ] /general-search: gather transformer sparsification baselines (verification: cross-check citations).", "- [ ] /math: derive KKT conditions for spectral norm constraint.", "- [ ] /code: run JAX experiment with Hutchinson trace estimator.", "- [ ] router QA: verify proofs and metrics before final answer."]
-              * Never include banned phrases or trivial tasks such as {', '.join(ANTI_PATTERNS)}.
-              * Ensure each tool call offers unique value—avoid repeating the same tool back-to-back unless explicitly justified.
+            ### Acceptance, metrics, and citations
+            - {todo_verify_text}
+            - Align acceptance criteria, metrics, and expected artifacts so graders can evaluate pass/fail conclusively.
+            - Cite ≥2 authoritative sources that satisfy the declared `citation_policy`, listing arXiv IDs/DOIs in the final artifact.
+            - Budget (`compute_budget`) should reflect realistic GPU/CPU minutes and VRAM for the difficulty tier.
 
-            Return ONLY valid JSON with double quotes. Do not wrap in markdown.
+            ### Research expectations
+            - {reference_hints}
+            - {search_hint}
+            - Encourage downstream agents to capture reasoning traces, verified computations, and feed results back to router QA.
+
+            ### Anti-patterns to avoid
+            - Do NOT create trivial homework prompts (e.g., {', '.join(ANTI_PATTERNS[:4])}).
+            - Do not omit verification tasks, citations, or metric reporting.
+            - Avoid vague requests (“discuss”, “explain”) without concrete acceptance hooks.
+            - Avoid reusing recent themes/tags unless justified as described above.
+
+            Return ONLY valid JSON (double-quoted keys/values). No markdown fences, commentary, or trailing prose.
             """
         ).strip()
         return prompt
