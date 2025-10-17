@@ -326,18 +326,3 @@ Run cells sequentially in `math_agent_architecture_gemma_3_4b.ipynb`:
 
 - **Gemma Models**: [Gemma Terms of Use](https://ai.google.dev/gemma/terms) - Apache 2.0 compatible
 - **MathX-5M Dataset**: Check [dataset card](https://huggingface.co/datasets/XenArcAI/MathX-5M) for specific license
-
-### Academic Use
-
-This architecture is designed for **educational and research purposes** within the CourseGPT-Pro project. The selected components (Gemma-3-4B, QLoRA, MathX-5M) are all permissively licensed for academic use.
-
-### Attribution
-
-When presenting this work:
-```
-Math Agent Architecture for CourseGPT-Pro
-Model: Google Gemma-3-4B-IT
-Dataset: XenArcAI MathX-5M
-Training: QLoRA (Quantized Low-Rank Adaptation)
-Implementation: [Your Team Name], [Date]
-```
