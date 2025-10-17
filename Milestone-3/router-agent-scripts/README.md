@@ -258,3 +258,9 @@ References
 - Meta AI, “Meta Llama 3.1 8B Instruct,” Hugging Face model card, 2025. https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct
 - Google DeepMind, “Gemma 3 Technical Report,” 2025 release notes and model cards. https://developers.googleblog.com/en/gemma-explained-whats-new-in-gemma-3/
 - Alibaba Group, “Qwen3-32B Instruct,” Hugging Face model card & technical blog, 2025. https://huggingface.co/Qwen/Qwen3-32B and https://qwenlm.github.io/blog/qwen3/
+
+Published Model Cards
+---------------------
+- Llama 3.1 8B Router Adapter: https://huggingface.co/CourseGPT-Pro-DSAI-Lab-Group-6/router-llama31-peft
+- Gemma 3 27B Router Adapter: https://huggingface.co/CourseGPT-Pro-DSAI-Lab-Group-6/router-gemma3-peft
+- Qwen3 32B Router Adapter: https://huggingface.co/CourseGPT-Pro-DSAI-Lab-Group-6/router-qwen3-32b-peft
