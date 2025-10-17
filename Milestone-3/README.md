@@ -212,8 +212,3 @@ End-to-end pipelines (smoke + full) have been executed for each agent, satisfyin
 * Build automated evaluation harness (JSON validation, CodeBLEU, benchmark scripts).
 * Integrate agents under a unified router with real-time tool calls & citation verifier.
 
----
-
-**Team:** CourseGPT-Pro · DSAI Lab · Group 6  
-**Contact:** coursegpt-pro@dsai-lab.example  
-**Date:** 17 Oct 2025
