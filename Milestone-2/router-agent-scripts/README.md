@@ -57,6 +57,11 @@ dispatch a user request to the appropriate tools:
    python gemini_router_dataset.py --repair-ids data/router_dataset.jsonl --repair-start 0
    ```
    (The original file is backed up with a `.bak` suffix before overwriting.)
+5. **Normalize the schema for an existing JSONL (optional)**:
+   ```bash
+   python gemini_router_dataset.py --repair-schema data/router_dataset.jsonl
+   ```
+   (Creates a `.schema.bak` backup and fills in any missing schema fields with defaults.)
 
 During execution the script displays a Rich-powered progress spinner for Gemini
 calls and summarizes the output location once writing completes. Validation

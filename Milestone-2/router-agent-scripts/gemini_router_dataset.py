@@ -900,6 +900,21 @@ class GeminiRouterDatasetBuilder:
                     outputs["artifacts"] = [artifacts_field.strip()]
                 else:
                     outputs["artifacts"] = DEFAULT_IO_SCHEMA["artifacts"].copy()
+                logs_field = outputs.get("logs")
+                if isinstance(logs_field, list):
+                    outputs["logs"] = logs_field[0] if logs_field else DEFAULT_IO_SCHEMA["logs"]
+                elif isinstance(logs_field, dict):
+                    first = next(
+                        (
+                            str(value).strip()
+                            for value in logs_field.values()
+                            if isinstance(value, str) and value.strip()
+                        ),
+                        DEFAULT_IO_SCHEMA["logs"],
+                    )
+                    outputs["logs"] = first
+                elif not isinstance(logs_field, str) or not logs_field.strip():
+                    outputs["logs"] = DEFAULT_IO_SCHEMA["logs"]
             payload["io_schema"] = io_schema
 
 
@@ -1314,6 +1329,9 @@ class GeminiRouterDatasetBuilder:
             raise ValueError("io_schema.outputs.artifacts must be a non-empty list of paths.")
         if any(not isinstance(path, str) or not path.strip() for path in artifacts_list):
             raise ValueError("Each entry in io_schema.outputs.artifacts must be a non-empty string path.")
+        logs_output = outputs.get("logs")
+        if logs_output is not None and (not isinstance(logs_output, str) or not logs_output.strip()):
+            raise ValueError("io_schema.outputs.logs must be a non-empty string path if provided.")
 
         thinking_outline = payload["thinking_outline"]
         if not isinstance(thinking_outline, list) or len(thinking_outline) < min_thinking_steps:
@@ -1705,6 +1723,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--repair-schema",
+        type=Path,
+        help=(
+            "If set, patch JSONL records to include all schema fields with sensible defaults and exit."
+        ),
+    )
+    parser.add_argument(
         "--repair-start",
         type=int,
         default=0,
@@ -1744,6 +1769,377 @@ def repair_jsonl_ids(file_path: Path, start: int) -> None:
     print(f"Repaired ids written to {file_path} (backup saved as {backup_path})")
 
 
+def _schema_backup_path(file_path: Path, label: str) -> Path:
+    candidate = file_path.with_name(f"{file_path.name}.{label}.bak")
+    if not candidate.exists():
+        return candidate
+    idx = 1
+    while True:
+        alt = file_path.with_name(f"{file_path.name}.{label}.bak{idx}")
+        if not alt.exists():
+            return alt
+        idx += 1
+
+
+def repair_jsonl_schema(file_path: Path) -> None:
+    if not file_path.exists():
+        raise FileNotFoundError(f"Cannot repair schema: {file_path} does not exist")
+
+    with file_path.open("r", encoding="utf-8") as reader:
+        raw_lines = [line.rstrip("\n") for line in reader if line.strip()]
+
+    if not raw_lines:
+        print(f"No records detected in {file_path}; nothing to repair.")
+        return
+
+    def _copy_default(obj: Any) -> Any:
+        return json.loads(json.dumps(obj))
+
+    updated_lines: List[str] = []
+    field_repairs: Dict[str, int] = {}
+    records_repaired = 0
+
+    for idx, raw_line in enumerate(raw_lines):
+        line_no = idx + 1
+        try:
+            payload = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Line {line_no} in {file_path} is not valid JSON.") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"Line {line_no} in {file_path} is not a JSON object.")
+
+        changed = False
+
+        def mark(field: str) -> None:
+            nonlocal changed
+            field_repairs[field] = field_repairs.get(field, 0) + 1
+            changed = True
+
+        def clean_string(value: Any, *, field: str, allow_empty: bool = False) -> str:
+            if isinstance(value, str):
+                stripped = value.strip()
+            elif value is None:
+                stripped = ""
+            else:
+                stripped = str(value).strip()
+            if not stripped and not allow_empty:
+                raise ValueError(f"Line {line_no}: field '{field}' must be a non-empty string.")
+            return stripped
+
+        def optional_string(value: Any) -> Optional[str]:
+            if isinstance(value, str):
+                stripped = value.strip()
+            elif value is None:
+                return None
+            else:
+                stripped = str(value).strip()
+            return stripped or None
+
+        def clean_string_list(
+            value: Any,
+            *,
+            field: str,
+            fallback: Optional[List[str]] = None,
+            allow_empty: bool = False,
+        ) -> List[str]:
+            if isinstance(value, list):
+                source_iter = value
+            elif isinstance(value, (tuple, set)):
+                source_iter = list(value)
+            elif isinstance(value, str):
+                source_iter = [value]
+            elif value is None:
+                source_iter = []
+            else:
+                source_iter = [value]
+
+            items: List[str] = []
+            for entry in source_iter:
+                maybe = optional_string(entry)
+                if maybe:
+                    items.append(maybe)
+            if not items:
+                if fallback is not None:
+                    return list(fallback)
+                if allow_empty:
+                    return []
+                raise ValueError(f"Line {line_no}: field '{field}' must provide at least one entry.")
+            return items
+
+        for token in ("id", "user_query", "task_summary", "route_rationale", "handoff_plan"):
+            original = payload.get(token)
+            cleaned = clean_string(original, field=token)
+            if cleaned != original:
+                payload[token] = cleaned
+                mark(token)
+
+        difficulty_original = payload.get("difficulty")
+        difficulty_clean = clean_string(difficulty_original, field="difficulty")
+        normalized_difficulty = difficulty_clean.lower()
+        if normalized_difficulty not in {"introductory", "intermediate", "advanced"}:
+            normalized_difficulty = "advanced"
+        if normalized_difficulty != difficulty_original:
+            payload["difficulty"] = normalized_difficulty
+            mark("difficulty")
+
+        route_plan_original = payload.get("route_plan")
+        route_plan = clean_string_list(route_plan_original, field="route_plan")
+        if route_plan != route_plan_original:
+            payload["route_plan"] = route_plan
+            mark("route_plan")
+
+        expected_artifacts_original = payload.get("expected_artifacts")
+        expected_artifacts = clean_string_list(
+            expected_artifacts_original,
+            field="expected_artifacts",
+        )
+        if expected_artifacts != expected_artifacts_original:
+            payload["expected_artifacts"] = expected_artifacts
+            mark("expected_artifacts")
+
+        thinking_outline_original = payload.get("thinking_outline")
+        thinking_outline = clean_string_list(
+            thinking_outline_original,
+            field="thinking_outline",
+        )
+        if thinking_outline != thinking_outline_original:
+            payload["thinking_outline"] = thinking_outline
+            mark("thinking_outline")
+
+        tags_original = payload.get("tags")
+        tags = clean_string_list(
+            tags_original,
+            field="tags",
+            fallback=["router"],
+        )
+        if tags != tags_original:
+            payload["tags"] = tags
+            mark("tags")
+
+        todo_original = payload.get("todo_list")
+        todo_entries = clean_string_list(
+            todo_original,
+            field="todo_list",
+            allow_empty=True,
+        )
+        todo_changed = False
+        if not todo_entries:
+            todo_entries = [TOOL_TODO_TEMPLATES["router qa"]]
+            todo_changed = True
+        if todo_entries and "router qa" not in todo_entries[-1].lower():
+            todo_entries.append(TOOL_TODO_TEMPLATES["router qa"])
+            todo_changed = True
+        if todo_changed or todo_entries != todo_original:
+            payload["todo_list"] = todo_entries
+            mark("todo_list")
+
+        acceptance_original = payload.get("acceptance_criteria")
+        acceptance = clean_string_list(
+            acceptance_original,
+            field="acceptance_criteria",
+            fallback=DEFAULT_ACCEPTANCE_CRITERIA,
+        )
+        if acceptance != acceptance_original:
+            payload["acceptance_criteria"] = acceptance
+            mark("acceptance_criteria")
+
+        metrics_original = payload.get("metrics")
+        if isinstance(metrics_original, dict):
+            sanitized_metrics: Dict[str, Any] = {
+                key: value
+                for key, value in metrics_original.items()
+                if key not in {"primary", "secondary"}
+            }
+            primary_list = clean_string_list(
+                metrics_original.get("primary"),
+                field="metrics.primary",
+                fallback=DEFAULT_METRICS["primary"],
+            )
+            secondary_list = clean_string_list(
+                metrics_original.get("secondary"),
+                field="metrics.secondary",
+                fallback=DEFAULT_METRICS["secondary"],
+            )
+            sanitized_metrics["primary"] = primary_list
+            sanitized_metrics["secondary"] = secondary_list
+        else:
+            sanitized_metrics = _copy_default(DEFAULT_METRICS)
+        if sanitized_metrics != metrics_original:
+            payload["metrics"] = sanitized_metrics
+            mark("metrics")
+
+        def coerce_numeric(value: Any, base: Any) -> Any:
+            target_type = type(base)
+            if isinstance(value, (int, float)):
+                coerced = target_type(value)
+                if target_type is int:
+                    coerced = int(round(float(value)))
+                return coerced
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return base
+                try:
+                    parsed = float(stripped)
+                except ValueError:
+                    return base
+                coerced = target_type(parsed)
+                if target_type is int:
+                    coerced = int(round(parsed))
+                return coerced
+            return base
+
+        compute_original = payload.get("compute_budget")
+        cleaned_budget: Dict[str, Any] = {}
+        for key, base in DEFAULT_COMPUTE_BUDGET.items():
+            source = compute_original.get(key) if isinstance(compute_original, dict) else None
+            cleaned_budget[key] = coerce_numeric(source, base)
+        if cleaned_budget != compute_original:
+            payload["compute_budget"] = cleaned_budget
+            mark("compute_budget")
+
+        repro_original = payload.get("repro") if isinstance(payload.get("repro"), dict) else {}
+        seed_value = coerce_numeric(repro_original.get("seed"), DEFAULT_REPRO["seed"])
+        deterministic_raw = repro_original.get("deterministic")
+        if isinstance(deterministic_raw, bool):
+            deterministic_value = deterministic_raw
+        elif isinstance(deterministic_raw, str):
+            lowered = deterministic_raw.strip().lower()
+            if lowered in {"false", "0", "no", "n"}:
+                deterministic_value = False
+            elif lowered in {"true", "1", "yes", "y"}:
+                deterministic_value = True
+            else:
+                deterministic_value = DEFAULT_REPRO["deterministic"]
+        elif deterministic_raw is None:
+            deterministic_value = DEFAULT_REPRO["deterministic"]
+        else:
+            deterministic_value = bool(deterministic_raw)
+        framework_value = optional_string(repro_original.get("framework")) or DEFAULT_REPRO["framework"]
+        cleaned_repro = {
+            "seed": int(seed_value),
+            "deterministic": deterministic_value,
+            "framework": framework_value,
+        }
+        if cleaned_repro != payload.get("repro"):
+            payload["repro"] = cleaned_repro
+            mark("repro")
+
+        requires_browse_original = payload.get("requires_browse")
+        if isinstance(requires_browse_original, bool):
+            requires_browse_clean = requires_browse_original
+        elif isinstance(requires_browse_original, str):
+            requires_browse_clean = requires_browse_original.strip().lower() not in {"false", "0", "no", "n"}
+        elif requires_browse_original is None:
+            requires_browse_clean = True
+        else:
+            requires_browse_clean = bool(requires_browse_original)
+        if requires_browse_clean != requires_browse_original:
+            payload["requires_browse"] = requires_browse_clean
+            mark("requires_browse")
+
+        citation_original = payload.get("citation_policy")
+        citation_clean = optional_string(citation_original) or "Cite ≥2 authoritative sources (arXiv DOI/URL) and include them in the final report."
+        if citation_clean != citation_original:
+            payload["citation_policy"] = citation_clean
+            mark("citation_policy")
+
+        io_schema_original = payload.get("io_schema")
+        if isinstance(io_schema_original, dict):
+            cleaned_io_schema: Dict[str, Any] = {
+                key: value
+                for key, value in io_schema_original.items()
+                if key not in {"artifacts", "logs", "outputs"}
+            }
+            artifacts_clean = clean_string_list(
+                io_schema_original.get("artifacts"),
+                field="io_schema.artifacts",
+                fallback=DEFAULT_IO_SCHEMA["artifacts"],
+            )
+            cleaned_io_schema["artifacts"] = artifacts_clean
+
+            logs_candidate = io_schema_original.get("logs")
+            logs_clean = optional_string(logs_candidate)
+            if logs_clean is None:
+                if isinstance(logs_candidate, (list, tuple, set)):
+                    for entry in logs_candidate:
+                        logs_clean = optional_string(entry)
+                        if logs_clean:
+                            break
+                elif isinstance(logs_candidate, dict):
+                    for entry in logs_candidate.values():
+                        logs_clean = optional_string(entry)
+                        if logs_clean:
+                            break
+            if logs_clean is None:
+                logs_clean = DEFAULT_IO_SCHEMA["logs"]
+            cleaned_io_schema["logs"] = logs_clean
+
+            outputs_original = io_schema_original.get("outputs")
+            if isinstance(outputs_original, dict):
+                outputs_clean: Dict[str, Any] = {
+                    key: value
+                    for key, value in outputs_original.items()
+                    if key not in {"artifacts", "logs"}
+                }
+                outputs_artifacts = clean_string_list(
+                    outputs_original.get("artifacts"),
+                    field="io_schema.outputs.artifacts",
+                    fallback=DEFAULT_IO_SCHEMA["artifacts"],
+                )
+                outputs_clean["artifacts"] = outputs_artifacts
+                outputs_log = optional_string(outputs_original.get("logs")) or logs_clean
+                outputs_clean["logs"] = outputs_log
+            else:
+                outputs_clean = {
+                    "artifacts": artifacts_clean.copy(),
+                    "logs": logs_clean,
+                }
+            cleaned_io_schema["outputs"] = outputs_clean
+        else:
+            cleaned_io_schema = _copy_default(DEFAULT_IO_SCHEMA)
+        if cleaned_io_schema != io_schema_original:
+            payload["io_schema"] = cleaned_io_schema
+            mark("io_schema")
+
+        quality_score_original = payload.get("quality_score")
+        if isinstance(quality_score_original, (int, float)):
+            quality_score_clean = float(quality_score_original)
+        elif isinstance(quality_score_original, str):
+            try:
+                quality_score_clean = float(quality_score_original.strip())
+            except ValueError:
+                quality_score_clean = 0.0
+        else:
+            quality_score_clean = 0.0
+        quality_score_clean = max(0.0, min(100.0, round(quality_score_clean, 2)))
+        if not isinstance(quality_score_original, (int, float)) or round(float(quality_score_original), 2) != quality_score_clean:
+            payload["quality_score"] = quality_score_clean
+            mark("quality_score")
+
+        updated_lines.append(json.dumps(payload, ensure_ascii=True))
+        if changed:
+            records_repaired += 1
+
+    if records_repaired == 0:
+        print(f"{file_path} already conforms to the router schema; no changes made.")
+        return
+
+    backup_path = _schema_backup_path(file_path, "schema")
+    file_path.rename(backup_path)
+    with file_path.open("w", encoding="utf-8") as writer:
+        writer.write("\n".join(updated_lines) + "\n")
+
+    summary = ", ".join(
+        f"{field}×{count}"
+        for field, count in sorted(field_repairs.items())
+    ) or "no field-level adjustments recorded"
+    print(
+        f"Schema repair complete for {records_repaired} record(s). "
+        f"Backup saved as {backup_path}. Updated fields: {summary}"
+    )
+
+
 def _count_existing_rows(path: Path) -> int:
     if not path.exists():
         return 0
@@ -1755,8 +2151,14 @@ def main(argv: Optional[List[str]] = None) -> None:
     load_dotenv()
     args = parse_args(argv)
 
+    if args.repair_ids and args.repair_schema:
+        raise SystemExit("Use either --repair-ids or --repair-schema, not both.")
+
     if args.repair_ids:
         repair_jsonl_ids(args.repair_ids, args.repair_start)
+        return
+    if args.repair_schema:
+        repair_jsonl_schema(args.repair_schema)
         return
 
     console = _get_console()
