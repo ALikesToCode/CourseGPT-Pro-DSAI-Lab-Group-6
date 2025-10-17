@@ -127,8 +127,8 @@ Active Tuning Jobs
 ------------------
 | Vertex Job ID | Base model | Tuning mode | Adapter size | Output URI | Status |
 | --- | --- | --- | --- | --- | --- |
-| `projects/542496349667/locations/us-central1/tuningJobs/1491991597619871744` | `meta/llama3_1@llama-3.1-8b-instruct` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/llama31-peft` | Running |
-| `projects/542496349667/locations/us-central1/tuningJobs/1108622679339958272` | `publishers/google/models/gemma3@gemma-3-27b-it` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/gemma3-peft` | Running |
+| `projects/542496349667/locations/us-central1/tuningJobs/1491991597619871744` | `meta/llama3_1@llama-3.1-8b-instruct` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/llama31-peft` | `JOB_STATE_RUNNING` (started 2025-10-17 10:42:40 UTC) |
+| `projects/542496349667/locations/us-central1/tuningJobs/1108622679339958272` | `publishers/google/models/gemma3@gemma-3-27b-it` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/gemma3-peft` | `JOB_STATE_RUNNING` (started 2025-10-17 10:43:33 UTC) |
 | *(pending allowlist)* | `publishers/qwen/models/qwen3@qwen3-30b-a3b-instruct-2507` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/qwen3-peft` | Denied – model not yet eligible for managed tuning |
 
 Use the CLI to track progress:
@@ -151,15 +151,15 @@ LoRA Configuration Notes
 Model Architecture Justification
 --------------------------------
 - **Llama 3.1 8B Instruct** (Meta)
-  - Architecture: 32 decoder layers, 8192 hidden size with grouped-query attention, 8B parameters, 131k token context window, RMSNorm activations.
+  - Architecture: 32 decoder-only transformer blocks, 4096 hidden size, grouped-query attention (32 query heads / 8 key-value heads), ~8B parameters, 128K-token context window, SwiGLU + RMSNorm stack.
   - Pros: instruction-tuned baseline with 131k context window, solid balance of quality vs cost, mature LoRA tooling, deployable on g2-standard-12 (NVIDIA L4).
   - Cons: smaller capacity than 27B+ models may limit complex reasoning; full fine-tuning requires larger accelerators.
 - **Gemma 3 27B IT** (Google)
-  - Architecture: 52 transformer layers with multi-query attention, tokenizer aligned with PaLM family, 27B dense parameters, safety-tuned with mixed-domain corpus.
+  - Architecture: ~48 transformer layers, grouped-query attention, SentencePiece tokenizer derived from Gemini/PaLM (≈260K vocab), 27B dense parameters with safety-tuned instruction head.
   - Pros: higher reasoning headroom, multilingual guardrails baked in, LoRA keeps GPU/VRAM requirements manageable.
   - Cons: inference footprint heavier than 8B models; preview-only tuning surface; LoRA adapters limit full-parameter updates.
 - **Qwen 3 30B Instruct** (Alibaba)
-  - Architecture: 60 transformer layers, rotary positional embeddings with 131k context, expanded tokenizer for code/math symbols, >30B parameters.
+  - Architecture: 48-layer Mixture-of-Experts decoder (128 experts, 8 active per token), rotary positional embeddings, 262K native context length, 30.5B total parameters, BBPE tokenizer (~151K vocab) tuned for code/math.
   - Pros: excellent multilingual/code performance; router tasks benefit from tool-use training.
   - Cons: managed tuning currently disabled for this project (requires additional allowlisting); deployment demands H100-class GPUs even with LoRA.
 
