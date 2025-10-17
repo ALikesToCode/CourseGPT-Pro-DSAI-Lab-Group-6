@@ -3,7 +3,7 @@
 ## Table of Contents
 1. [Math Agent Overview](#math-agent-overview)
 2. [Router Agent Overview](#router-agent-overview)
-3. [Code Agent Overview (Coming Soon)](#code-agent-overview-coming-soon)
+3. [Code Agent Overview](#code-agent-overview)
 
 ---
 
@@ -19,7 +19,7 @@ The Math Agent is designed to solve complex mathematical problems with step-by-s
 - **Optimization:** Mixed precision (BF16/FP16), gradient checkpointing, AdamW optimizer
 
 ### Key Design Decisions
-- **Model Selection:** Gemma-3-4B chosen for its balance of performance and efficiency, strong instruction-following, and open licensing.
+- **Model Selection:** Gemma-3-4B chosen for its balance of performance and efficiency and being the newer of the open source models.
 - **LoRA Training:** Enables efficient adaptation by training only ~0.5% of parameters, reducing memory and compute requirements.
 - **Dataset Choice:** MathX-5M provides diverse, step-by-step solutions across K-12 to college-level math, formatted for educational clarity.
 - **Instruction Format:** Chat-based template with explicit system/user/assistant roles and step-by-step reasoning using `<think>` tags.
@@ -43,12 +43,12 @@ The Math Agent is designed to solve complex mathematical problems with step-by-s
 The Router Agent determines the optimal sequence of downstream agents (e.g., math, code, search) to solve a given user query, outputting a structured plan and rationale for tool selection.
 
 ### Architecture Summary
-- **Supported Models:** Llama 3.1 8B Instruct, Gemma 3 27B IT, Qwen3 32B Instruct (Vertex AI PEFT or full fine-tuning)
+- **Attempted Models:** Llama 3.1 8B Instruct, Gemma 3 27B IT, Qwen3 32B Instruct (Vertex AI PEFT or full fine-tuning)
 - **Dataset:** Week-2 router dataset, converted to Vertex AI supervised fine-tuning format (prompt/completion JSONL)
 - **Tuning:** LoRA/PEFT or full fine-tuning via Vertex AI, with adapter size configurable (default: 16)
 
 ### Key Design Decisions
-- **Model Selection:**
+- **Model Benefits:**
   - **Llama 3.1 8B:** Cost-efficient, strong baseline, 128K context window
   - **Gemma 3 27B:** Highest accuracy, strong multilingual guardrails
   - **Qwen3 32B:** Best for complex, multi-tool routing with native "thinking" mode
