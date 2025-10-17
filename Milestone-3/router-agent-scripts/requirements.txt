@@ -1,0 +1,4 @@
+google-cloud-aiplatform==1.121.0
+google-cloud-storage>=2.19.0
+pandas>=2.3.3
+python-dotenv>=1.0.1
