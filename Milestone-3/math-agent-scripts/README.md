@@ -19,14 +19,14 @@ Our math agent leverages Google's Gemma-3-4B-IT model fine-tuned on the MathX-5M
 
 ### Key Architecture Specifications
 
-| Component | Configuration | Justification |
-|-----------|--------------|---------------|
-| **Model Size** | 4B parameters | Optimal balance between capability and deployability |
-| **Fine-Tuning Method** | LoRA (Low-Rank Adaptation) | Parameter-efficient; only 0.5% of weights trained |
-| **LoRA Rank** | r=16, α=32 | Sufficient expressiveness for math reasoning tasks |
-| **Target Modules** | All attention & FFN layers | Comprehensive adaptation across model architecture |
-| **Sequence Length** | 2048 tokens | Accommodates complex multi-step problem solving |
-| **Mixed Precision** | BF16/FP16 | Faster training with reduced memory usage |
+| Component              | Configuration              | Justification                                        |
+| ---------------------- | -------------------------- | ---------------------------------------------------- |
+| **Model Size**         | 4B parameters              | Optimal balance between capability and deployability |
+| **Fine-Tuning Method** | LoRA (Low-Rank Adaptation) | Parameter-efficient; only 0.5% of weights trained    |
+| **LoRA Rank**          | r=16, α=32                 | Sufficient expressiveness for math reasoning tasks   |
+| **Target Modules**     | All attention & FFN layers | Comprehensive adaptation across model architecture   |
+| **Sequence Length**    | 2048 tokens                | Accommodates complex multi-step problem solving      |
+| **Mixed Precision**    | BF16/FP16                  | Faster training with reduced memory usage            |
 
 ## 🏗️ Architecture Justification
 
@@ -34,14 +34,14 @@ Our math agent leverages Google's Gemma-3-4B-IT model fine-tuned on the MathX-5M
 
 #### **Evaluated Alternatives:**
 
-| Model | Size | Pros | Cons | Why Not Selected |
-|-------|------|------|------|------------------|
-| **GPT-3.5/4** | Large | Excellent performance | Proprietary, API costs, data privacy | ❌ Not suitable for academic deployment |
-| **Llama-3.1-8B** | 8B | Strong general reasoning | Higher resource requirements | ❌ Exceeds GPU constraints (>24GB VRAM) |
-| **Mistral-7B** | 7B | Good generalization | Less optimized for instruction following | ❌ Suboptimal instruction adherence |
-| **Phi-3-Mini** | 3.8B | Efficient, fast | Limited mathematical reasoning depth | ❌ Insufficient for complex math problems |
-| **Gemma-2-2B** | 2B | Very lightweight | Reduced capability on multi-step reasoning | ❌ Too small for educational requirements |
-| **Gemma-3-4B** | 4B | ✅ **Balanced performance & efficiency** | Newer model, less community adoption | ✅ **SELECTED** - Optimal trade-off |
+| Model            | Size  | Pros                                    | Cons                                       | Why Not Selected                         |
+| ---------------- | ----- | --------------------------------------- | ------------------------------------------ | ---------------------------------------- |
+| **GPT-3.5/4**    | Large | Excellent performance                   | Proprietary, API costs, data privacy       | ❌ Not suitable for academic deployment   |
+| **Llama-3.1-8B** | 8B    | Strong general reasoning                | Higher resource requirements               | ❌ Exceeds GPU constraints (>24GB VRAM)   |
+| **Mistral-7B**   | 7B    | Good generalization                     | Less optimized for instruction following   | ❌ Suboptimal instruction adherence       |
+| **Phi-3-Mini**   | 3.8B  | Efficient, fast                         | Limited mathematical reasoning depth       | ❌ Insufficient for complex math problems |
+| **Gemma-2-2B**   | 2B    | Very lightweight                        | Reduced capability on multi-step reasoning | ❌ Too small for educational requirements |
+| **Gemma-3-4B**   | 4B    | ✅ **Balanced performance & efficiency** | Newer model, less community adoption       | ✅ **SELECTED** - Optimal trade-off       |
 
 #### **Selection Rationale:**
 
@@ -56,14 +56,14 @@ Our math agent leverages Google's Gemma-3-4B-IT model fine-tuned on the MathX-5M
 
 #### **Evaluated Alternatives:**
 
-| Method | Memory Efficiency | Training Speed | Quality | Why Not Selected |
-|--------|------------------|----------------|---------|------------------|
-| **Full Fine-Tuning** | Low (4×) | Slow | Highest | ❌ Requires 64GB+ VRAM, trains all 4B parameters |
-| **Prompt Engineering** | N/A (no training) | N/A | Variable | ❌ Limited domain adaptation, inconsistent |
-| **Adapter Layers** | Medium (2×) | Medium | Good | ❌ More parameters than LoRA, less efficient |
-| **LoRA** | **High (efficient)** | **Fast** | **Very Good** | ✅ **SELECTED** - Best efficiency/quality ratio |
-| **Prefix Tuning** | High | Fast | Moderate | ❌ Lower quality on reasoning tasks |
-| **BitFit** | Very High | Very Fast | Lower | ❌ Only tunes bias terms; insufficient for reasoning |
+| Method                 | Memory Efficiency    | Training Speed | Quality       | Why Not Selected                                    |
+| ---------------------- | -------------------- | -------------- | ------------- | --------------------------------------------------- |
+| **Full Fine-Tuning**   | Low (4×)             | Slow           | Highest       | ❌ Requires 64GB+ VRAM, trains all 4B parameters     |
+| **Prompt Engineering** | N/A (no training)    | N/A            | Variable      | ❌ Limited domain adaptation, inconsistent           |
+| **Adapter Layers**     | Medium (2×)          | Medium         | Good          | ❌ More parameters than LoRA, less efficient         |
+| **LoRA**               | **High (efficient)** | **Fast**       | **Very Good** | ✅ **SELECTED** - Best efficiency/quality ratio      |
+| **Prefix Tuning**      | High                 | Fast           | Moderate      | ❌ Lower quality on reasoning tasks                  |
+| **BitFit**             | Very High            | Very Fast      | Lower         | ❌ Only tunes bias terms; insufficient for reasoning |
 
 #### **LoRA Justification:**
 
@@ -79,13 +79,13 @@ Our math agent leverages Google's Gemma-3-4B-IT model fine-tuned on the MathX-5M
 
 #### **Evaluated Alternatives:**
 
-| Dataset | Size | Difficulty Range | Solution Format | Why Not Selected |
-|---------|------|-----------------|-----------------|------------------|
-| **GSM8K** | 8K | Elementary-Middle | Text only | ❌ Too small, limited complexity |
-| **MATH** | 12K | High school-College | LaTeX + Text | ❌ Too advanced, limited scale |
-| **MetaMathQA** | 395K | K-12 | Synthetic reasoning | ❌ Quality concerns with synthetic data |
-| **Orca-Math** | 200K | Middle-High school | Step-by-step | ❌ Smaller scale, less diverse |
-| **MathX-5M** | **4.32M** | **K-12 to College** | **Step-by-step with `<think>` tags** | ✅ **SELECTED** - Comprehensive scale & quality |
+| Dataset        | Size      | Difficulty Range    | Solution Format                      | Why Not Selected                               |
+| -------------- | --------- | ------------------- | ------------------------------------ | ---------------------------------------------- |
+| **GSM8K**      | 8K        | Elementary-Middle   | Text only                            | ❌ Too small, limited complexity                |
+| **MATH**       | 12K       | High school-College | LaTeX + Text                         | ❌ Too advanced, limited scale                  |
+| **MetaMathQA** | 395K      | K-12                | Synthetic reasoning                  | ❌ Quality concerns with synthetic data         |
+| **Orca-Math**  | 200K      | Middle-High school  | Step-by-step                         | ❌ Smaller scale, less diverse                  |
+| **MathX-5M**   | **4.32M** | **K-12 to College** | **Step-by-step with `<think>` tags** | ✅ **SELECTED** - Comprehensive scale & quality |
 
 #### **MathX-5M Justification:**
 
@@ -112,24 +112,24 @@ target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",  # Attention layers
 
 #### **Hyperparameter Selection**
 
-| Parameter | Value | Alternative Values | Justification |
-|-----------|-------|-------------------|---------------|
-| **Rank (r)** | 16 | 4, 8, 32, 64 | r=16 balances expressiveness and efficiency; r<16 underfits, r>16 offers diminishing returns |
-| **Alpha (α)** | 32 | 16, 64, 128 | α=2r is standard scaling; maintains stable gradients during training |
-| **Dropout** | 0.05 | 0.0, 0.1, 0.2 | Low dropout preserves learned patterns while preventing overfitting on math tasks |
-| **Learning Rate** | 2e-4 | 1e-4, 5e-4, 1e-3 | Conservative rate prevents catastrophic forgetting of base model knowledge |
-| **Batch Size** | 16 (2×8) | 8, 32, 64 | Optimal for GPU memory; gradient accumulation simulates larger batches |
+| Parameter         | Value    | Alternative Values | Justification                                                                                |
+| ----------------- | -------- | ------------------ | -------------------------------------------------------------------------------------------- |
+| **Rank (r)**      | 16       | 4, 8, 32, 64       | r=16 balances expressiveness and efficiency; r<16 underfits, r>16 offers diminishing returns |
+| **Alpha (α)**     | 32       | 16, 64, 128        | α=2r is standard scaling; maintains stable gradients during training                         |
+| **Dropout**       | 0.05     | 0.0, 0.1, 0.2      | Low dropout preserves learned patterns while preventing overfitting on math tasks            |
+| **Learning Rate** | 2e-4     | 1e-4, 5e-4, 1e-3   | Conservative rate prevents catastrophic forgetting of base model knowledge                   |
+| **Batch Size**    | 16 (2×8) | 8, 32, 64          | Optimal for GPU memory; gradient accumulation simulates larger batches                       |
 
 ### 5. Training Strategy Justification
 
 ### Memory Optimization Techniques
 
-| Technique | Memory Saved | Quality Impact | Rationale |
-|-----------|--------------|----------------|-----------|
-| **LoRA Adapters** | 99.5% parameters frozen | Minimal (<5%) | Only train small adapter matrices |
-| **Gradient Checkpointing** | 40-50% | None | Trades compute for memory |
-| **Mixed Precision (BF16/FP16)** | 50% (activations) | None | Faster computation, lower memory |
-| **Gradient Accumulation** | Enables larger effective batch | None | Simulates larger batches without memory cost |
+| Technique                       | Memory Saved                   | Quality Impact | Rationale                                    |
+| ------------------------------- | ------------------------------ | -------------- | -------------------------------------------- |
+| **LoRA Adapters**               | 99.5% parameters frozen        | Minimal (<5%)  | Only train small adapter matrices            |
+| **Gradient Checkpointing**      | 40-50%                         | None           | Trades compute for memory                    |
+| **Mixed Precision (BF16/FP16)** | 50% (activations)              | None           | Faster computation, lower memory             |
+| **Gradient Accumulation**       | Enables larger effective batch | None           | Simulates larger batches without memory cost |
 
 **Combined Effect**: These techniques enable efficient fine-tuning on GPUs with 16-24GB VRAM
 
@@ -166,12 +166,12 @@ messages = [
 
 #### **Why Not Alternative Formats?**
 
-| Alternative Format | Issues | Our Choice Advantage |
-|-------------------|--------|---------------------|
-| Simple Q&A pairs | No reasoning context, black-box answers | ❌ Lacks pedagogical value |
-| Code-style formatting | Not natural for math explanations | ❌ Poor readability for students |
-| Pure completion | No role separation, unclear context | ❌ Reduced instruction clarity |
-| **Chat-based (selected)** | None for instruction-tuned models | ✅ Natural, contextual, educational |
+| Alternative Format        | Issues                                  | Our Choice Advantage               |
+| ------------------------- | --------------------------------------- | ---------------------------------- |
+| Simple Q&A pairs          | No reasoning context, black-box answers | ❌ Lacks pedagogical value          |
+| Code-style formatting     | Not natural for math explanations       | ❌ Poor readability for students    |
+| Pure completion           | No role separation, unclear context     | ❌ Reduced instruction clarity      |
+| **Chat-based (selected)** | None for instruction-tuned models       | ✅ Natural, contextual, educational |
 
 ## � Complete Architecture Pipeline
 
@@ -251,16 +251,16 @@ messages = [
 
 ### Core Decision Matrix
 
-| Decision Point | Selected Option | Key Rationale |
-|---------------|----------------|---------------|
-| **Base Model** | Gemma-3-4B-IT | Optimal performance/efficiency; strong instruction following |
-| **Training Method** | LoRA | 99.5% parameter reduction; efficient fine-tuning |
-| **Dataset** | MathX-5M | Largest scale; step-by-step reasoning format |
-| **LoRA Configuration** | r=16, α=32, 7 modules | Comprehensive adaptation; proven for reasoning tasks |
-| **Mixed Precision** | BF16/FP16 | Faster training; reduced memory usage |
-| **Sequence Length** | 2048 tokens | Accommodates multi-step solutions |
-| **Batch Strategy** | 2×8 gradient accumulation | Fits GPU constraints; stable training |
-| **Optimizer** | AdamW | Standard optimizer; proven for LLM training |
+| Decision Point         | Selected Option           | Key Rationale                                                |
+| ---------------------- | ------------------------- | ------------------------------------------------------------ |
+| **Base Model**         | Gemma-3-4B-IT             | Optimal performance/efficiency; strong instruction following |
+| **Training Method**    | LoRA                      | 99.5% parameter reduction; efficient fine-tuning             |
+| **Dataset**            | MathX-5M                  | Largest scale; step-by-step reasoning format                 |
+| **LoRA Configuration** | r=16, α=32, 7 modules     | Comprehensive adaptation; proven for reasoning tasks         |
+| **Mixed Precision**    | BF16/FP16                 | Faster training; reduced memory usage                        |
+| **Sequence Length**    | 2048 tokens               | Accommodates multi-step solutions                            |
+| **Batch Strategy**     | 2×8 gradient accumulation | Fits GPU constraints; stable training                        |
+| **Optimizer**          | AdamW                     | Standard optimizer; proven for LLM training                  |
 
 ## 🚀 Getting Started (Quick Reference)
 
@@ -341,16 +341,3 @@ Dataset: XenArcAI MathX-5M
 Training: QLoRA (Quantized Low-Rank Adaptation)
 Implementation: [Your Team Name], [Date]
 ```
-
-## 📊 Conclusion
-
-This architecture represents a carefully balanced solution for mathematical reasoning in educational contexts:
-
-✅ **Performance**: Strong accuracy on diverse math problems  
-✅ **Efficiency**: Trainable on consumer GPUs (12-16GB)  
-✅ **Scalability**: Streaming architecture supports full 4.32M dataset  
-✅ **Pedagogy**: Step-by-step reasoning aligns with learning objectives  
-✅ **Deployability**: Quantized model enables broad institutional access  
-✅ **Extensibility**: Modular design supports future enhancements  
-
-**The Gemma-3-4B + LoRA + MathX-5M architecture delivers production-ready mathematical reasoning capabilities while maintaining resource efficiency and educational appropriateness for the CourseGPT-Pro platform.**
