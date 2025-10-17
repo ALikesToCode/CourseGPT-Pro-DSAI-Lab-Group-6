@@ -100,7 +100,7 @@ Evaluate & Deploy
   from vertexai.preview import model_garden
 
   model = model_garden.CustomModel(
-      gcs_uri="gs://<bucket>/router-tuning/llama31-peft/postprocess/node-0/checkpoints/final",
+      gcs_uri="gs://router-data-542496349667/router-tuning/llama31-peft/postprocess/node-0/checkpoints/final",
   )
 
   endpoint = model.deploy(
@@ -126,11 +126,11 @@ End-to-End Pipeline Verification
 
 Active Tuning Jobs
 ------------------
-| Vertex Job ID | Base model | Tuning mode | Adapter size | Output URI | Status |
-| --- | --- | --- | --- | --- | --- |
-| `projects/542496349667/locations/us-central1/tuningJobs/1491991597619871744` | `meta/llama3_1@llama-3.1-8b-instruct` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/llama31-peft` | `JOB_STATE_RUNNING` (started 2025-10-17 10:42:40 UTC) |
-| `projects/542496349667/locations/us-central1/tuningJobs/1108622679339958272` | `publishers/google/models/gemma3@gemma-3-27b-it` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/gemma3-peft` | `JOB_STATE_RUNNING` (started 2025-10-17 10:43:33 UTC) |
-| *(pending allowlist / verification)* | `qwen/qwen3@qwen3-32b` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/qwen3-32b-peft` | Awaiting Vertex AI support; use self-managed tuning if not allowlisted (see Qwen3-32B Integration) |
+| Vertex Job ID | Base model | Tuning mode | Adapter size | Output URI | Status | Eval highlights |
+| --- | --- | --- | --- | --- | --- | --- |
+| `projects/542496349667/locations/us-central1/tuningJobs/1491991597619871744` | `meta/llama3_1@llama-3.1-8b-instruct` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/llama31-peft` | `JOB_STATE_SUCCEEDED` (2025-10-17 10:42:40 → 13:41:27 UTC) | BLEU ≈ 0.4004; eval loss ≈ 0.6758; perplexity ≈ 1.97; eval runtime ≈ 67.9 s |
+| `projects/542496349667/locations/us-central1/tuningJobs/1108622679339958272` | `publishers/google/models/gemma3@gemma-3-27b-it` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/gemma3-peft` | `JOB_STATE_SUCCEEDED` (2025-10-17 10:43:33 → 14:58:00 UTC) | Eval loss ≈ 0.6080; perplexity ≈ 1.84; eval runtime ≈ 15.4 s |
+| `projects/542496349667/locations/us-central1/tuningJobs/2183294140421242880` | `qwen/qwen3@qwen3-32b` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/qwen3-32b-peft` | `JOB_STATE_SUCCEEDED` (2025-10-17 10:42:40 → 14:23:06 UTC) | Eval loss ≈ 0.6277; perplexity ≈ 1.87; eval runtime ≈ 16.7 s |
 
 Use the CLI to track progress:
 ```bash
@@ -216,6 +216,13 @@ Model Comparison Snapshot
 | Thinking mode | Prompt-engineered | Prompt-engineered | Built-in (`enable_thinking`) |
 | Recommended hardware | NVIDIA L4 / g2-standard-12 | L4 or A100 (preview tuning) | A100/H100 (quantize for L4) |
 | Inference cost (relative) | Low | High | High (dense 32B; ~9–10× Llama 8B) |
+
+Model Selection Recommendation
+------------------------------
+- **Best balance of accuracy vs. cost:** Gemma 3 27B IT delivered the lowest validation loss (≈0.608, perplexity ≈1.84) while maintaining strong multilingual guardrails. Choose Gemma when GPU budget allows A3/H100-class hardware and highest-quality routing decisions are required.
+- **Cost-efficient production baseline:** Llama 3.1 8B Instruct achieved BLEU ≈0.40 with modest perplexity (≈1.97) and runs comfortably on g2-standard-12 (NVIDIA L4). Use Llama for latency-sensitive or budget-conscious deployments, and escalate to larger models only for difficult tickets.
+- **Advanced reasoning or tool orchestration:** Qwen3 32B Instruct fine-tuned successfully (loss ≈0.628, perplexity ≈1.87) and offers native `<think>` reasoning blocks plus top-tier agent/tool training. Prefer Qwen for complex, multi-tool routing flows where explainable chain-of-thought outweighs higher inference cost.
+- **Hybrid approach:** Route routine traffic to Llama (or a distilled variant) and hand off escalations to Gemma/Qwen based on desired reasoning depth (`/think` vs `/no_think` control tags).
 
 Pipeline Verification
 ---------------------
