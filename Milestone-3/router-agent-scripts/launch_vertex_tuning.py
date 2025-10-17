@@ -18,7 +18,8 @@ import json
 import os
 import sys
 import time
-from typing import Dict, Optional
+import inspect
+from typing import Callable, Dict, Optional
 
 from google.cloud import aiplatform
 
@@ -44,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--location", default=os.getenv("GOOGLE_CLOUD_REGION", "us-central1"), help="Vertex AI region.")
     parser.add_argument("--train-uri", required=True, help="GCS URI to training JSONL.")
     parser.add_argument("--validation-uri", help="Optional GCS URI to validation JSONL.")
-    parser.add_argument("--output-uri", required=True, help="GCS folder for tuned artifacts.")
+    parser.add_argument("--output-uri", default="", help="Optional GCS folder for tuned artifacts.")
     parser.add_argument("--base-model", default=DEFAULT_BASE_MODEL, help="publisher/model identifier.")
     parser.add_argument("--custom-base", default="", help="Optional GCS folder with previous LoRA/full checkpoints.")
     parser.add_argument("--tuning-mode", choices=["FULL", "PEFT_ADAPTER"], default="PEFT_ADAPTER", help="Fine-tuning strategy.")
@@ -90,21 +91,75 @@ def submit_job(args: argparse.Namespace) -> sft.SupervisedTuningJob:
         ) from _IMPORT_ERROR
     vertexai.init(project=args.project, location=args.location)
     labels = parse_labels(args.labels)
-    # The SourceModel wrapper makes it easy to resume runs from a previous checkpoint.
-    source = SourceModel(base_model=args.base_model, custom_base_model=args.custom_base)
-    job = sft.train(
-        source_model=source,
-        train_dataset=args.train_uri,
-        validation_dataset=args.validation_uri,
-        tuning_mode=args.tuning_mode,
-        epochs=args.epochs,
-        learning_rate=args.learning_rate,
-        learning_rate_multiplier=args.learning_rate_multiplier,
-        adapter_size=args.adapter_size if args.tuning_mode == "PEFT_ADAPTER" else None,
-        tuned_model_display_name=args.display_name or None,
-        output_uri=args.output_uri,
-        labels=labels or None,
-    )
+
+    # Prefer preview_train when we need features missing in the GA train method.
+    train_fn: Callable[..., object] = sft.train
+    train_signature = inspect.signature(train_fn)
+    supported = set(train_signature.parameters)
+
+    if args.output_uri and "output_uri" not in supported and hasattr(sft, "preview_train"):
+        train_fn = sft.preview_train
+        train_signature = inspect.signature(train_fn)
+        supported = set(train_signature.parameters)
+
+    supported = set(train_signature.parameters)
+
+    if args.tuning_mode != "PEFT_ADAPTER" and "tuning_mode" not in supported:
+        print(
+            "This vertexai SDK does not support switching tuning modes; "
+            f"requested mode '{args.tuning_mode}' will be ignored.",
+            file=sys.stderr,
+        )
+    if args.output_uri and "output_uri" not in supported:
+        print(
+            "Warning: current vertexai SDK does not support --output-uri; artifacts will be stored in the default location.",
+            file=sys.stderr,
+        )
+    if args.learning_rate and "learning_rate" not in supported:
+        print("Warning: --learning-rate is not supported in this SDK version and will be ignored.", file=sys.stderr)
+    if args.learning_rate_multiplier and "learning_rate_multiplier" not in supported:
+        print(
+            "Warning: --learning-rate-multiplier is not supported in this SDK version and will be ignored.",
+            file=sys.stderr,
+        )
+    if args.custom_base and SourceModel is None:
+        raise ValueError("Custom base models require vertexai.preview.tuning.SourceModel support.")
+
+    source_model_arg: object
+    if args.custom_base:
+        source_model_arg = SourceModel(base_model=args.base_model, custom_base_model=args.custom_base)
+    else:
+        source_model_arg = args.base_model
+
+    train_kwargs: Dict[str, object] = {
+        "source_model": source_model_arg,
+        "train_dataset": args.train_uri,
+    }
+    if args.validation_uri:
+        train_kwargs["validation_dataset"] = args.validation_uri
+    if args.display_name:
+        train_kwargs["tuned_model_display_name"] = args.display_name
+    if "epochs" in supported and args.epochs is not None:
+        train_kwargs["epochs"] = args.epochs
+    if "tuning_mode" in supported and args.tuning_mode:
+        train_kwargs["tuning_mode"] = args.tuning_mode
+    if "learning_rate" in supported and args.learning_rate is not None:
+        train_kwargs["learning_rate"] = args.learning_rate
+    if "learning_rate_multiplier" in supported and args.learning_rate_multiplier is not None:
+        train_kwargs["learning_rate_multiplier"] = args.learning_rate_multiplier
+    if "adapter_size" in supported and args.adapter_size is not None:
+        train_kwargs["adapter_size"] = args.adapter_size
+    if "labels" in supported and labels:
+        train_kwargs["labels"] = labels
+    elif "labels" not in supported and labels:
+        print("Warning: labels are not supported in this SDK version and will be ignored.", file=sys.stderr)
+    if "output_uri" in supported and args.output_uri:
+        train_kwargs["output_uri"] = args.output_uri
+    elif args.output_uri:
+        # Force output_uri even if not in signature - required for some models
+        train_kwargs["output_uri"] = args.output_uri
+
+    job = train_fn(**train_kwargs)
     return job
 
 
