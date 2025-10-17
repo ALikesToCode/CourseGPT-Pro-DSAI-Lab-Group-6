@@ -26,6 +26,25 @@ Dataset Preparation
 - Local copies reside under `data/vertex_tuning/` for quick inspection.
 - `--limit` flag enables smoke subsets (e.g., `--limit 200`) that were used to validate the pipeline before running at full scale.
 
+Router Data Schema & Validation
+------------------------------
+- Each record is converted to a Vertex-friendly JSON object with two keys:
+  - `prompt`: deterministic system+user instruction that reminds the model to emit strict JSON.
+  - `completion`: serialized router plan JSON containing downstream task directives.
+- Fields preserved inside the completion payload (extracted from the week-2 dataset):
+  - `route_plan`: ordered tool calls (e.g., `/math`, `/code`).
+  - `route_rationale`: natural-language justification for the tool mix.
+  - `expected_artifacts`, `thinking_outline`, `handoff_plan`, `todo_list`: structured checklists for downstream agents.
+  - `difficulty`, `tags`, `acceptance_criteria`, `metrics`: metadata used for grading and evaluation.
+- Quality checks performed by `prepare_vertex_tuning_dataset.py`:
+  - Validates JSON per line and strips blank rows.
+  - Ensures deterministic shuffling via `--seed`.
+  - Allows dataset capping (`--limit`) to support smoke runs and few-shot experiments.
+- Suggested additional validations before large jobs:
+  - Run `python -m json.tool` on a sample file to confirm strict JSON.
+  - Spot check 5–10 examples to ensure high-value prompts (no empty tool lists, etc.).
+  - Compute basic stats (length distribution, tool frequency) to detect skew—see TODO in `prepare_vertex_tuning_dataset.py` for future automation.
+
 Environment Setup
 -----------------
 - Create a local virtualenv and install dependencies:
@@ -41,22 +60,19 @@ Environment Setup
   export GOOGLE_CLOUD_REGION=us-central1
   ```
 
-Prepare Training JSONL
-----------------------
-- Generate prompt/completion files from the Week-2 dataset:
-  ```bash
-  python prepare_vertex_tuning_dataset.py \
-      --input ../../Milestone-2/router-agent-scripts/output.jsonl \
-      --output-dir data/vertex_tuning \
-      --val-ratio 0.1 \
-      --test-ratio 0.05 \
-      --gcs-prefix gs://<bucket>/router-dataset
-  ```
-- The script:
-  - Shuffles deterministically, writes `train.jsonl`, `validation.jsonl`, `test.jsonl`.
-  - Emits strict JSON completions aligned with the router schema.
-  - Uploads to GCS when `--gcs-prefix` is provided.
-- For pipeline smoke tests use `--limit 200` to create a tiny subset.
+Helper Scripts
+--------------
+- `prepare_vertex_tuning_dataset.py`
+  - Flags: `--input`, `--output-dir`, `--val-ratio`, `--test-ratio`, `--limit`, `--gcs-prefix`, `--seed`.
+  - Emits three JSONL files and prints a summary block (counts, file paths, uploaded URIs).
+  - Designed to be idempotent: re-running with the same seed regenerates the same splits.
+- `launch_vertex_tuning.py`
+  - Wraps `vertexai.preview.tuning.sft.preview_train` and auto-detects SDK capabilities (e.g., gracefully downgrades when `output_uri` unsupported).
+  - Key flags: `--base-model`, `--train-uri`, `--validation-uri`, `--output-uri`, `--tuning-mode`, `--adapter-size`, `--display-name`, `--labels`, `--wait`.
+  - Prints the Vertex job resource name so exact runs can be resumed/queried later.
+- Suggested habit for reproducibility:
+  - Capture the CLI commands (with timestamp) in `Milestone-3/router-agent-scripts/logs/` for grading transparency.
+  - Store the `vertexai` package version (`pip show google-cloud-aiplatform`) alongside results.
 
 Launch a Tuning Job
 -------------------
@@ -94,6 +110,12 @@ Evaluate & Deploy
   )
   ```
 - Route a handful of real router prompts through the endpoint before scaling the dataset run.
+- Use `gcloud ai endpoints predict` or the Python SDK to script batch evaluations; remember to include `raw_response=True` for chat-completions style models.
+- To download adapters for offline inference:
+  ```bash
+  gcloud storage cp -r gs://router-data-542496349667/router-tuning/llama31-peft/postprocess/node-0/checkpoints/final ./artifacts/llama31-peft
+  ```
+- Vertex console exposes training curves (loss vs steps) inside each tuning job; capture screenshots or CSV exports for the final report.
 
 End-to-End Pipeline Verification
 --------------------------------
@@ -115,15 +137,29 @@ gcloud ai tuning-jobs list --region=us-central1
 gcloud ai tuning-jobs describe projects/542496349667/locations/us-central1/tuningJobs/<JOB_ID>
 ```
 
+LoRA Configuration Notes
+------------------------
+- Default parameters:
+  - `adapter_size` (rank) = 16; adjust via `--adapter-size` (supported values: 1, 4, 8, 16, 32).
+  - Vertex automatically sets LoRA alpha and scaling; for custom tuning, override via `--learning-rate` or `--learning-rate-multiplier`.
+  - Training epochs default to 3 (change with `--epochs`).
+- Practical tips:
+  - Lower ranks (4 or 8) reduce memory footprint for quick iterations; higher ranks (16+) typically improve fidelity on complex routing tasks.
+  - Use labels (e.g., `--labels run=peft16,model=llama31`) to keep Vertex job dashboards organized.
+  - Store LoRA weight exports located under `<output-uri>/postprocess/node-0/checkpoints/final/adapter_config.json` (metadata) and `adapter_model.bin`.
+
 Model Architecture Justification
 --------------------------------
 - **Llama 3.1 8B Instruct** (Meta)
+  - Architecture: 32 decoder layers, 8192 hidden size with grouped-query attention, 8B parameters, 131k token context window, RMSNorm activations.
   - Pros: instruction-tuned baseline with 131k context window, solid balance of quality vs cost, mature LoRA tooling, deployable on g2-standard-12 (NVIDIA L4).
   - Cons: smaller capacity than 27B+ models may limit complex reasoning; full fine-tuning requires larger accelerators.
 - **Gemma 3 27B IT** (Google)
+  - Architecture: 52 transformer layers with multi-query attention, tokenizer aligned with PaLM family, 27B dense parameters, safety-tuned with mixed-domain corpus.
   - Pros: higher reasoning headroom, multilingual guardrails baked in, LoRA keeps GPU/VRAM requirements manageable.
   - Cons: inference footprint heavier than 8B models; preview-only tuning surface; LoRA adapters limit full-parameter updates.
 - **Qwen 3 30B Instruct** (Alibaba)
+  - Architecture: 60 transformer layers, rotary positional embeddings with 131k context, expanded tokenizer for code/math symbols, >30B parameters.
   - Pros: excellent multilingual/code performance; router tasks benefit from tool-use training.
   - Cons: managed tuning currently disabled for this project (requires additional allowlisting); deployment demands H100-class GPUs even with LoRA.
 
@@ -133,6 +169,22 @@ Pipeline Verification
 - Tune: execute `launch_vertex_tuning.py` pointing to the smoke dataset to validate API IAM, dataset schema, checkpoint export.
 - Evaluate: deploy the resulting small model, run regression prompts from Week-2 evaluation harness, and log deltas.
 - Scale: once the smoke test passes, rerun without `--limit` to produce the full-tuning dataset and submit the production job.
+
+Evaluation & Reporting Plan
+---------------------------
+- **Automated JSON validation:** use `jq` or a Python script to confirm every prediction is strict JSON; treat invalid JSON as failure.
+- **Routing accuracy metrics:**
+  - `tool_recall`: percentage of ground-truth tools present in the generated `route_plan`.
+  - `tool_precision`: percentage of predicted tools that exist in ground truth.
+  - `exact_plan_match`: boolean; useful for leaderboard metrics.
+  - `metadata_consistency`: track if difficulty/tags/acceptance criteria are preserved.
+- **Evaluation workflow (sample):**
+  1. Export tuned adapter to `gs://.../final`.
+  2. Deploy to an endpoint as shown above (keep endpoint name for logging).
+  3. Run `python evaluate_router.py --endpoint <ENDPOINT_ID> --test-file data/vertex_tuning/test.jsonl --max-examples 200`.
+  4. Aggregated metrics are written to `reports/<timestamp>_metrics.json` for submission.
+- **Human spot checks:** manually inspect 10 prompts focusing on failure modes (missing `/general-search`, wrong ordering, low-quality rationale).
+- **Reporting template:** include dataset version, training command, Vertex job link, inference endpoint ID, metric table, and qualitative notes.
 
 Next Steps
 ----------
