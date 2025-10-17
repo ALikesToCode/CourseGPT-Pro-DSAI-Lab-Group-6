@@ -7,6 +7,25 @@ Overview
 - Supports end-to-end tuning flow for open models (Llama 3.1 8B Instruct, Gemma 3 27B IT, Qwen 3 32B) using Vertex AI preview.
 - Provides launch script to submit PEFT or full fine-tuning jobs, plus guidance for evaluation/deployment.
 
+Dataset Preparation
+-------------------
+- Source dataset: `Milestone-2/router-agent-scripts/output.jsonl`.
+- Conversion command (deterministic shuffle, split, and upload):
+  ```bash
+  python prepare_vertex_tuning_dataset.py \
+      --input ../../Milestone-2/router-agent-scripts/output.jsonl \
+      --output-dir data/vertex_tuning \
+      --val-ratio 0.1 \
+      --test-ratio 0.05 \
+      --gcs-prefix gs://router-data-542496349667/router-dataset
+  ```
+- Resulting JSONL files (strict `prompt`/`completion` schema ready for Vertex tuning):
+  - `gs://router-data-542496349667/router-dataset/train.jsonl` (6,962 rows)
+  - `gs://router-data-542496349667/router-dataset/validation.jsonl` (818 rows)
+  - `gs://router-data-542496349667/router-dataset/test.jsonl` (409 rows)
+- Local copies reside under `data/vertex_tuning/` for quick inspection.
+- `--limit` flag enables smoke subsets (e.g., `--limit 200`) that were used to validate the pipeline before running at full scale.
+
 Environment Setup
 -----------------
 - Create a local virtualenv and install dependencies:
@@ -76,17 +95,37 @@ Evaluate & Deploy
   ```
 - Route a handful of real router prompts through the endpoint before scaling the dataset run.
 
+End-to-End Pipeline Verification
+--------------------------------
+- Smoke data run (200 examples) ensured JSONL schema compliance and GCS upload.
+- Smoke tuning job confirmed IAM permissions, SDK compatibility, and checkpoint export location.
+- Full dataset tuning kicked off after smoke validations succeeded (see job table below).
+
+Active Tuning Jobs
+------------------
+| Vertex Job ID | Base model | Tuning mode | Adapter size | Output URI | Status |
+| --- | --- | --- | --- | --- | --- |
+| `projects/542496349667/locations/us-central1/tuningJobs/1491991597619871744` | `meta/llama3_1@llama-3.1-8b-instruct` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/llama31-peft` | Running |
+| `projects/542496349667/locations/us-central1/tuningJobs/1108622679339958272` | `publishers/google/models/gemma3@gemma-3-27b-it` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/gemma3-peft` | Running |
+| *(pending allowlist)* | `publishers/qwen/models/qwen3@qwen3-30b-a3b-instruct-2507` | PEFT | 16 | `gs://router-data-542496349667/router-tuning/qwen3-peft` | Denied – model not yet eligible for managed tuning |
+
+Use the CLI to track progress:
+```bash
+gcloud ai tuning-jobs list --region=us-central1
+gcloud ai tuning-jobs describe projects/542496349667/locations/us-central1/tuningJobs/<JOB_ID>
+```
+
 Model Architecture Justification
 --------------------------------
-- **Llama 3.1 8B Instruct** - default choice (full + LoRA).
-  - Pros: strong instruction-following baseline, 131k context window, efficient on A2/G2 GPUs, community tooling.
-  - Cons: may plateau on ultra-nuanced math/code; full FT incurs higher GPU hours than LoRA.
-- **Gemma 3 27B IT** - high-capacity LoRA-only alternative.
-  - Pros: larger reasoning headroom, multilingual guardrails pre-baked.
-  - Cons: requires LoRA adapters; inference footprint is heavier than 8B models.
-- **Qwen 3 32B** - multilingual/code specialist (PEFT-only).
-  - Pros: broad token support plus strong code reasoning; good for diverse router content.
-  - Cons: LoRA adapters still need L4/A3 resources; preview support is evolving, so monitor API changes.
+- **Llama 3.1 8B Instruct** (Meta)
+  - Pros: instruction-tuned baseline with 131k context window, solid balance of quality vs cost, mature LoRA tooling, deployable on g2-standard-12 (NVIDIA L4).
+  - Cons: smaller capacity than 27B+ models may limit complex reasoning; full fine-tuning requires larger accelerators.
+- **Gemma 3 27B IT** (Google)
+  - Pros: higher reasoning headroom, multilingual guardrails baked in, LoRA keeps GPU/VRAM requirements manageable.
+  - Cons: inference footprint heavier than 8B models; preview-only tuning surface; LoRA adapters limit full-parameter updates.
+- **Qwen 3 30B Instruct** (Alibaba)
+  - Pros: excellent multilingual/code performance; router tasks benefit from tool-use training.
+  - Cons: managed tuning currently disabled for this project (requires additional allowlisting); deployment demands H100-class GPUs even with LoRA.
 
 Pipeline Verification
 ---------------------
