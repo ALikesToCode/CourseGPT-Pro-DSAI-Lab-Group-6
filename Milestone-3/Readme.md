@@ -67,8 +67,35 @@ The Router Agent determines the optimal sequence of downstream agents (e.g., mat
 
 ---
 
-## Code Agent Overview (Coming Soon)
 
-*This section will be updated with the Code Agent architecture, dataset, training pipeline, and justification once finalized.*
+## Code Agent Overview
+
+### Purpose
+The Code Agent is responsible for generating code solutions to programming tasks, leveraging instruction-tuned language models fine-tuned on high-quality code datasets.
+
+### Architecture Summary
+- **Base Models:**
+  - `Qwen/Qwen3-0.6B` (successfully fine-tuned)
+  - `meta-llama/Meta-Llama-3.1-8B-Instruct` (fine-tuning attempted)
+- **Dataset:** `OpenCoder-LLM/opc-sft-stage2` (instruction-tuning for code generation)
+- **Fine-Tuning:** QLoRA (Quantized LoRA) for memory-efficient adaptation
+- **Optimization:** Flash Attention for improved training speed; BitsAndBytes for 4-bit quantization
+
+### Key Design Decisions
+- **Model Selection:** Qwen3-0.6B chosen for successful fine-tuning and resource efficiency; Llama-3.1-8B explored for scaling up.
+- **QLoRA Training:** Enables fine-tuning large models on limited hardware by combining LoRA with quantization.
+- **Dataset Choice:** OpenCoder-LLM provides diverse, high-quality code instructions for robust code generation.
+- **Adapter Saving:** Fine-tuned adapters are saved for efficient deployment and reuse.
+
+### Pipeline Overview
+1. **Data Preparation:** Load and preprocess OpenCoder-LLM dataset for instruction-tuning.
+2. **Model Initialization:** Load base model (Qwen3-0.6B or Llama-3.1-8B), configure QLoRA and quantization.
+3. **Training:** Fine-tune with QLoRA, Flash Attention, and BitsAndBytes optimizations.
+4. **Persistence:** Save LoRA adapters (e.g., `./qwen_code_lora_adapter`) for deployment.
+
+### Justification Highlights
+- **QLoRA:** Chosen for enabling memory-efficient fine-tuning of large language models on commodity GPUs.
+- **Flash Attention & BitsAndBytes:** Improve training speed and reduce memory usage, making large-scale code model training feasible.
+- **Dataset:** OpenCoder-LLM ensures the agent is exposed to a wide range of programming tasks and instructions.
 
 ---
