@@ -131,6 +131,12 @@ AI tutoring deployments underscore the need for guardrails. UC San Diego’s bes
 - [120](https://en.wikipedia.org/wiki/Transformer_(deep_learning_architecture))[128](https://www.sapien.io/blog/fine-tuning-vs-pre-training-key-differences-for-language-models) Transformer + transfer learning primers — foundations for domain pre-training.
 - [135](https://today.ucsd.edu/story/this-bespoke-ai-tutor-helps-students-learning)[136](https://arxiv.org/html/2406.05600v1)[137](https://www.kaggle.com/datasets/open-benchmarks/mathvista) Educational deployments and benchmarks — scaffolding insights for CourseGPT-Pro.
 - Additional supporting citations: [7](https://weaviate.io/blog/hybrid-search-explained) · [10](https://docs.pinecone.io/guides/search/hybrid-search) · [11](https://www.usaii.org/ai-insights/multimodal-rag-explained-from-text-to-images-and-beyond) · [65](https://github.com/openai/grade-school-math) · [71](https://arxiv.org/abs/2409.02834) · [72](http://arxiv.org/pdf/2405.07551.pdf) · [79](http://arxiv.org/pdf/2404.19245.pdf) · [80](https://arxiv.org/pdf/2402.16141.pdf) · [81](https://arxiv.org/html/2410.01497) · [87](https://www.redhat.com/en/blog/synthetic-data-secret-ingredient-better-language-models) · [88](https://wandb.ai/byyoung3/ML_NEWS3/reports/Knowledge-distillation-Teaching-LLM-s-with-synthetic-data--Vmlldzo5MTMyMzA2) · [89](https://neptune.ai/blog/knowledge-distillation) · [91](https://www.nvidia.com/en-us/glossary/cot-prompting/) · [95](https://arxiv.org/abs/2405.16265) · [107](https://zilliz.com/comparison/milvus-vs-qdrant) · [110](https://www.gpu-mart.com/blog/top-5-open-source-vector-databases-2024/) · [111](https://www.datacamp.com/blog/the-top-5-vector-databases) · [113](https://www.geeksforgeeks.org/nlp/understanding-bleu-and-rouge-score-for-nlp-evaluation/) · [114](https://clementbm.github.io/theory/2021/12/23/rouge-bleu-scores.html) · [118](https://www.adaline.ai/blog/understanding-bleu-rouge-and-modern-nlp-metrics) · [130](https://arxiv.org/html/2408.06663v2) · [134](https://www.geeksforgeeks.org/nlp/encoder-decoder-models/) · [138](https://arxiv.org/abs/2310.02255) · [140](https://huggingface.co/datasets/Reja1/jee-neet-benchmark).
+- [141](https://huggingface.co/datasets/AI4Math/MathVista) MathVista dataset — multimodal vision-language reasoning benchmark (CC BY-SA 4.0).
+- [142](https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k) DAPO-Math-17k dataset — instruction-aligned math reasoning corpus (Apache-2.0).
+- [143](https://huggingface.co/datasets/XenArcAI/MathX-5M) MathX-5M dataset — large-scale math instruction data (MIT License).
+- [144](https://huggingface.co/datasets/armanc/ScienceQA) ScienceQA dataset — multimodal science question answering benchmark (CC BY-SA 4.0).
+- [145](https://huggingface.co/datasets/Reja1/jee-neet-benchmark) JEE-NEET Benchmark dataset — STEM exam-style question corpus (MIT License).
+- [146](https://huggingface.co/datasets/daman1209arora/jeebench) JEEBench dataset — IIT JEE-style problem set collection (MIT License).
 
 ### **2.15 Implications for CourseGPT-Pro**
 
@@ -162,27 +168,12 @@ The system is orchestrated by an intelligent, multi-agent architecture. This app
 
 We will leverage existing, high-quality datasets for training and evaluation. All selected datasets have permissive, **OSI-approved licenses (e.g., MIT, Apache 2.0)** or allow for non-commercial research use. We do not plan to create a new dataset from scratch but may use knowledge distillation from leading models to generate synthetic training data if required.
 
-* **MathVista:** CC BY-SA 4.0 (Evaluation, Non-commercial) [https://huggingface.co/datasets/AI4Math/MathVista](https://huggingface.co/datasets/AI4Math/MathVista) 
-
-* **DAPO-Math-17k:** Apache-2.0 (Permissive, OSI-approved)
-
-  [https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k](https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k) 
-
-* **MathX-5M:** MIT (Permissive, OSI-approved)
-
-  [https://huggingface.co/datasets/XenArcAI/MathX-5M](https://huggingface.co/datasets/XenArcAI/MathX-5M) 
-
-* **ScienceQA:** CC BY-SA 4.0 (Evaluation, Non-commercial)
-
-  [https://huggingface.co/datasets/armanc/ScienceQA](https://huggingface.co/datasets/armanc/ScienceQA) 
-
-* **JEE-NEET Benchmark:** MIT (Permissive, OSI-approved)
-
-  [https://huggingface.co/datasets/Reja1/jee-neet-benchmark](https://huggingface.co/datasets/Reja1/jee-neet-benchmark) 
-
-* **JEEBench:** MIT (Permissive, OSI-approved)
-
-  [https://huggingface.co/datasets/daman1209arora/jeebench](https://huggingface.co/datasets/daman1209arora/jeebench) 
+* **MathVista** [141] — CC BY-SA 4.0 (evaluation, non-commercial).
+* **DAPO-Math-17k** [142] — Apache-2.0 (permissive, OSI-approved).
+* **MathX-5M** [143] — MIT (permissive, OSI-approved).
+* **ScienceQA** [144] — CC BY-SA 4.0 (evaluation, non-commercial).
+* **JEE-NEET Benchmark** [145] — MIT (permissive, OSI-approved).
+* **JEEBench** [146] — MIT (permissive, OSI-approved).
 
 ## **5\. Baselines & Performance Assessment** 
 
