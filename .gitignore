@@ -3,3 +3,4 @@
 data/ 
 **jsonl**
 **pycache**/
+settings.json
