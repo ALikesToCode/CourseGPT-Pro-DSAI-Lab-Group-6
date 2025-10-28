@@ -2,6 +2,7 @@ import argparse
 import os
 import vertexai
 from vertexai.preview.tuning import sft
+from google.cloud import aiplatform
 
 
 def main(args):
@@ -28,16 +29,16 @@ def main(args):
 
     # This is the function that calls the cheap, managed service
     job = sft.preview_train(
-        display_name=args.display_name,
         source_model=args.base_model,
         train_dataset=args.train_uri,
         validation_dataset=args.validation_uri,
         # This is where the final LoRA adapter will be saved
-        output_dir=args.output_uri,
+        output_uri=args.output_uri,
         # PEFT is the cheap, fast LoRA method
         tuning_mode=args.tuning_mode,
         adapter_size=args.adapter_size,
-        epochs=args.epochs
+        epochs=args.epochs,
+        tuned_model_display_name=args.display_name
     )
 
     print("\n✅ Job submitted successfully!")
