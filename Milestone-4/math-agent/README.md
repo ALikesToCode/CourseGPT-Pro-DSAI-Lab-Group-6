@@ -1,52 +1,74 @@
 # Math Agent — Vertex Tuning README
 
-This document walks through preparing data and launching Vertex AI tuning jobs for math model adapters.
+This guide shows how to prepare the MathX subset, upload it to Google Cloud Storage (GCS), and launch Vertex AI supervised tuning jobs to produce PEFT adapters for math reasoning models.
 
 ## Prerequisites
 
-- Install and configure the Google Cloud SDK (gcloud).
-- Ensure you have a GCP project and permission to write to a Cloud Storage bucket.
-- Python 3.8+ and required scripts (`prepare_vertex_tuning.py`, `launch_vertex_tuning.py`) available in this repo.
+- Google Cloud SDK (`gcloud`) installed and configured
+- A GCP project with Vertex AI APIs enabled and a GCS bucket you can read/write
+- Python 3.8+ and the repository scripts `prepare_vertex_tuning.py` and `launch_vertex_tuning.py`
+- Recommended: a virtual environment (venv/conda) and service account or Application Default Credentials with permissions for Vertex AI and the target bucket
 
 ## 1. Set up your environment
 
-Authenticate with Google Cloud and set your project and region environment variables.
+Authenticate and configure `gcloud` and ADC (Application Default Credentials):
+
+Bash / WSL / macOS:
 
 ```bash
 gcloud auth login
 gcloud auth application-default login
+gcloud config set project YOUR_GCP_PROJECT_ID
+gcloud config set compute/region us-central1
+export BUCKET_NAME="your-gcs-bucket-name"    # e.g. dsai-bucket
 ```
 
-Export your project, region and a GCS bucket name (replace the placeholders):
+PowerShell (Windows):
 
-```bash
-export GOOGLE_CLOUD_PROJECT="your-gcp-project-id"
-export GOOGLE_CLOUD_REGION="us-central1"
-export BUCKET_NAME="your-gcs-bucket-name" # e.g., "my-math-model-bucket"
+```powershell
+& gcloud auth login
+& gcloud auth application-default login
+gcloud config set project YOUR_GCP_PROJECT_ID
+gcloud config set compute/region us-central1
+$env:BUCKET_NAME = "your-gcs-bucket-name"
 ```
 
-## 2. Prepare and upload your data (run once)
+Tip: If you run in WSL, prefer the Bash example. Ensure the service account or user account has Vertex AI and Storage permissions.
 
-Run the preparation script to download/process the dataset and upload it to GCS. This will take a few minutes and will produce training and validation JSONL files.
+## 2. Prepare and upload data (one-time)
+
+The included `prepare_vertex_tuning.py` downloads and formats a MathX subset and uploads two JSONL files (train/validation) to GCS.
+
+Bash / WSL:
 
 ```bash
 python prepare_vertex_tuning.py \
-    --bucket $BUCKET_NAME \
+    --bucket "$BUCKET_NAME" \
     --gcs-prefix "mathx-dataset-v1"
 ```
 
-After the script finishes it will print two URIs. Copy them for the training step:
+PowerShell:
 
-- Train URI: `gs://your-gcs-bucket-name/mathx-dataset-v1/train.jsonl`
-- Validation URI: `gs://your-gcs-bucket-name/mathx-dataset-v1/validation.jsonl`
+```powershell
+python prepare_vertex_tuning.py --bucket $env:BUCKET_NAME --gcs-prefix "mathx-dataset-v1"
+```
 
-## 3. Launch model training jobs (run multiple times)
+When complete the script will print the GCS URIs, for example:
 
-Use `launch_vertex_tuning.py` to run Vertex tuning jobs. Below are example invocations for three different base models that have been successfully tested. Replace the URIs, project/bucket names, and any other flags as needed.
+- `gs://dsai-bucket/mathx-dataset-v1/train.jsonl`
+- `gs://dsai-bucket/mathx-dataset-v1/validation.jsonl`
 
-### Example 1 — Qwen3 32B
+Use those exact URIs when launching tuning jobs.
 
-This is a large-scale model with native reasoning capabilities and excellent mathematical performance.
+## 3. Launch Vertex AI tuning jobs
+
+Use `launch_vertex_tuning.py` to submit supervised tuning jobs. Below are tested example invocations—adjust URIs, display names, and hyperparameters for your experiments.
+
+Notes:
+- `--base-model` should use the Vertex / publisher identifier format: `publisher/model@version`
+- `--output-uri` is a GCS prefix where Vertex will write adapter artifacts
+
+Bash example (Qwen3 32B):
 
 ```bash
 python launch_vertex_tuning.py \
@@ -59,9 +81,15 @@ python launch_vertex_tuning.py \
     --adapter-size 16
 ```
 
-### Example 2 — Gemma 3 27B IT
+PowerShell equivalent:
 
-This model provides strong multilingual capabilities and excellent instruction following.
+```powershell
+python launch_vertex_tuning.py --base-model "qwen/qwen3@qwen3-32b" --display-name "math-qwen3-32b-peft" --train-uri "gs://$env:BUCKET_NAME/mathx-dataset-v1/train.jsonl" --validation-uri "gs://$env:BUCKET_NAME/mathx-dataset-v1/validation.jsonl" --output-uri "gs://$env:BUCKET_NAME/adapters/math-qwen3-32b" --epochs 3 --adapter-size 16
+```
+
+Other tested model examples (Bash):
+
+Gemma 3 (27B-instruction-tuned):
 
 ```bash
 python launch_vertex_tuning.py \
@@ -74,9 +102,7 @@ python launch_vertex_tuning.py \
     --adapter-size 16
 ```
 
-### Example 3 — Llama 4 Scout 17B
-
-This is an instruction-tuned variant optimized for educational and reasoning tasks.
+Llama4 Scout (17B, instruct):
 
 ```bash
 python launch_vertex_tuning.py \
@@ -94,22 +120,39 @@ python launch_vertex_tuning.py \
 - Replace placeholder values (project id, bucket name, URIs) with your real values.
 - The `prepare_vertex_tuning.py` script prints the final `train.jsonl` and `validation.jsonl` GCS URIs — use those when launching tuning jobs.
 - Monitor job status and logs in the Google Cloud Console (Vertex AI > Training > Jobs).
-- Consider setting up IAM permissions on the storage bucket so Vertex AI has access to read the training/validation files and write model artifacts.
+-- Make sure Vertex AI (service account) or your ADC has read/write access to the bucket.
 
-## 4. Evaluation Benchmarks
+## 4. Evaluation & Benchmarks
 
-After training, evaluate your math agent on standard mathematical reasoning benchmarks to measure performance:
+After training, evaluate adapters on standard math benchmarks. Recommended datasets:
 
-### Recommended Benchmarks for MathX-5M Models
+- GSM8K (basic multi-step word problems)
+- MATH (competition problems, harder)
+- SVAMP (robustness / paraphrases)
+- MAWPS (word problems)
+- MathQA / AQuA (multiple-choice / algebra)
 
-| Benchmark | Size | Difficulty | Format | Purpose | Expected Accuracy |
-|-----------|------|------------|--------|---------|-------------------|
-| **GSM8K** | 8,518 problems | Elementary-Middle School | Natural language word problems | Measure basic arithmetic and multi-step reasoning | 85-95% |
-| **MATH** | 12,500 problems | High School-College | LaTeX-formatted competition problems | Evaluate advanced mathematical reasoning | 30-50% |
-| **SVAMP** | 1,000 problems | Elementary | Arithmetic variations | Test robustness to problem phrasing | 85-95% |
-| **MAWPS** | 3,371 problems | Elementary-Middle School | Diverse word problems | Assess basic operation understanding | 80-90% |
-| **MathQA** | 37,000+ problems | Middle-High School | Multiple choice | Evaluate reasoning depth | 70-85% |
-| **AQuA** | 100,000+ problems | Algebraic | Natural language algebra | Test symbolic manipulation | 60-80% |
+Key metrics:
+- Exact-match accuracy on final answers
+- Step-by-step reasoning quality (manual or rubric-based)
+- Robustness to phrasing and small perturbations
+
+Quick evaluation snippet (conceptual):
+
+```python
+from datasets import load_dataset
+
+# load a dataset (example)
+gsm8k = load_dataset("gsm8k", "main", split="test")
+
+for item in gsm8k:
+    prompt = item["question"]
+    # get adapter-loaded model and generate
+    prediction = model.generate(prompt)
+    # compute exact-match, log results
+```
+
+Datasets are available on Hugging Face (search by name) or via academic mirrors.
 
 ### Evaluation Metrics
 
@@ -141,16 +184,48 @@ for problem in gsm8k:
 - **SVAMP**: `https://huggingface.co/datasets/ChilleD/SVAMP`
 - **MathQA**: `https://huggingface.co/datasets/math_qa`
 
-## 5. Model Comparison
+## 5. Model comparison (summary)
 
-Based on training with MathX-5M dataset (10K samples, LoRA rank 16, 3 epochs):
+These are example, approximate observations from short LoRA runs (10K MathX subset, LoRA rank=16, epochs=3). Use them as guidance only.
 
-| Model | Parameters | Training Time | Expected GSM8K | Expected MATH | Deployment Cost | Best For |
-|-------|------------|---------------|----------------|---------------|-----------------|----------|
-| **Qwen3-32B** | 32B | ~4-6 hours | 90-95% | 40-50% | High | Complex reasoning, multi-step problems |
-| **Gemma3-27B** | 27B | ~3-5 hours | 88-93% | 35-45% | Medium-High | Multilingual, instruction following |
-| **Llama4-Scout-17B** | 17B | ~2-4 hours | 85-92% | 30-42% | Medium | Educational tasks, balanced performance |
+| Model | Size | Typical training time* | Use-case |
+|-------|------:|----------------------:|---------|
+| Qwen3-32B | 32B | longer | Best for strongest reasoning when cost/compute is available |
+| Gemma3-27B | 27B | medium | Strong instruction-following and multilingual support |
+| Llama4-Scout-17B | 17B | shorter | Good balance for educational tasks and lower VRAM |
 
-*Note: Actual results may vary based on training data size, hyperparameters, and evaluation protocol.*
+*Training time depends on machine type (TPU/GPU), batch size, and parallelism.
 
-If you'd like, I can also add a short section on required Python dependencies and a sample `requirements.txt` or add automatic creation of the GCS prefix folder. Let me know which you'd prefer.
+*Training time depends on machine type (TPU/GPU), batch size, and parallelism.
+
+## 6. Fine-Tuning Results Comparison on Math Dataset
+
+| **Aspect** | **LLaMA-4-Scout-17B-16E-Instruct** | **Gemma-3-27B-IT** | **Qwen-3-32B** |
+|:------------|:----------------------------------:|:------------------:|:---------------:|
+| **Initial Train Loss** | ~1.3 | ~0.85 | ~0.50 |
+| **Final Train Loss** | ~0.55 | ~0.38 | ~0.33 |
+| **Initial Validation (Eval) Loss** | ~0.73 | ~0.82 | ~0.50 |
+| **Final Validation (Eval) Loss** | ~0.58 | ~0.41 | ~0.37 |
+| **Convergence Trend** | Gradual, stable decline | Smooth and consistent | Smooth but with mild noise |
+| **Training Stability** | Moderate | **Excellent** | Good (minor oscillations) |
+| **Validation Gap (Overfitting)** | Slight gap | **Minimal gap** | Minimal gap |
+| **Generalization Ability** | Medium | **High** | High |
+| **Optimization Behavior** | Needs slight LR tuning | **Balanced and optimal** | Steady, slower convergence |
+| **Overall Fine-Tuning Quality** | ⭐⭐☆ | ⭐⭐⭐ | ⭐⭐⭐ |
+| **Best Use Case** | When smaller VRAM or faster fine-tuning is needed | **For highest accuracy and stability on math reasoning** | For large-scale deployment with strong baseline |
+
+---
+
+## 🧠 Insights
+
+- **Gemma-3-27B-IT** shows the **best trade-off** between training and evaluation loss, indicating strong generalization and effective learning from the math dataset.  
+- **Qwen-3-32B** performs nearly as well, with slightly slower improvement due to its larger parameter count and strong base pretraining.  
+- **LLaMA-4-Scout-17B** converges well but could benefit from **longer training or a lower learning rate**.
+
+---
+
+## 🏁 Final Ranking (Based on Loss Metrics)
+
+1. 🥇 **Gemma-3-27B-IT** → Best overall performance  
+2. 🥈 **Qwen-3-32B** → Strong, slightly noisier convergence  
+3. 🥉 **LLaMA-4-Scout-17B** → Good baseline, needs minor tuning
