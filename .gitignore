@@ -4,3 +4,14 @@ data/
 **jsonl**
 **pycache**/
 settings.json
+
+# Ignore adapter artifacts and model weights
+adapters/
+**/adapters/
+**/adapters/**
+**/adapter/
+**/adapter/**
+*.safetensors
+*.pt
+*.bin
+*.ckpt
