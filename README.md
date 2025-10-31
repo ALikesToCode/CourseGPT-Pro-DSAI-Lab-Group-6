@@ -162,7 +162,7 @@ The system is orchestrated by an intelligent, multi-agent architecture. This app
 
 * **Workflow:** The Router receives a query (e.g., "Solve problem 3.5 from the textbook"). It first uses the RAG agent to retrieve the problem text and any relevant theory. It then passes the mathematical part to the Math Agent. If the problem involves code, the Code Agent is also invoked. The Router collects the outputs from all sub-agents and synthesizes them into a final, coherent, step-by-step solution.
 
-![Agentic Orchestration Overview](assets/image1.png)
+![Agentic Orchestration Overview](assets/image3.png)
 
 ## **4\. Datasets & Licensing**
 
