@@ -20,6 +20,9 @@ This directory houses the specialised **Math Agent** implementation that the rou
 3. Add unit tests or smoke scripts (e.g., `tests/test_smoke.py`) that validate the interface.
 4. Update `Milestone-6/router-agent/hf_space/app.py` to instantiate and call the agent when the router plan includes `/math(...)`.
 
+### Template
+- `math_agent_template.py` demonstrates how to integrate an LLM-backed solver and optional validation hooks. Copy/rename it when you begin your implementation.
+
 ## Environment Notes
 - Prefer environment variables for credentials: `MATH_AGENT_MODEL`, `OPENAI_API_KEY`, etc.
 - When running in Hugging Face Spaces, ensure dependencies are declared in `hf_space/requirements.txt`.
