@@ -41,7 +41,7 @@ To accomplish this, we have outlined the following specific objectives:
 
 * Objective 4: Strong Tool-Augmented Reasoning  
   To train a generative language model to reliably call external tools. The model must learn when to delegate tasks to a symbolic math solver (e.g., SymPy) for exact computation and a sandboxed code interpreter for running program logic, then integrate the results seamlessly into its explanation.
-
+  
 * Objective 5: Verify & Trust  
   To build a verification module that cross-checks the generated answer against retrieved sources. The output must feature exact, page-and-region-level citations to ensure user trust and traceability.
 

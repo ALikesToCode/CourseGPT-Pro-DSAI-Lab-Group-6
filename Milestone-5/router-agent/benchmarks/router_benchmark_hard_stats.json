@@ -1,0 +1,64 @@
+{
+  "sources": [
+    "../../Milestone-3/router-agent-scripts/data/vertex_tuning/train.jsonl",
+    "../../Milestone-3/router-agent-scripts/data/vertex_tuning/validation.jsonl",
+    "../../Milestone-3/router-agent-scripts/data/vertex_tuning/test.jsonl"
+  ],
+  "output": "benchmarks/router_benchmark_hard.jsonl",
+  "benchmark_rows": 322,
+  "categories_included": [
+    "four_step",
+    "math_backstop",
+    "math_first",
+    "math_multi_pass",
+    "metrics_computation",
+    "metrics_guidance",
+    "non_canonical_route"
+  ],
+  "category_counts": {
+    "four_step": 187,
+    "math_backstop": 184,
+    "math_first": 136,
+    "math_multi_pass": 186,
+    "metrics_computation": 10,
+    "metrics_guidance": 54,
+    "non_canonical_route": 322
+  },
+  "route_templates": [
+    [
+      "/general-search -> /math -> /code -> /math",
+      183
+    ],
+    [
+      "/math -> /general-search -> /code",
+      81
+    ],
+    [
+      "/math -> /code -> /general-search",
+      48
+    ],
+    [
+      "/math -> /code",
+      6
+    ],
+    [
+      "/general-search -> /math -> /code -> /math -> /code",
+      2
+    ],
+    [
+      "/general-search -> /math -> /code -> /general-search",
+      1
+    ],
+    [
+      "/math -> /general-search -> /code -> /math",
+      1
+    ]
+  ],
+  "source_sample_counts": {
+    "../../Milestone-3/router-agent-scripts/data/vertex_tuning/test.jsonl": 8,
+    "../../Milestone-3/router-agent-scripts/data/vertex_tuning/train.jsonl": 292,
+    "../../Milestone-3/router-agent-scripts/data/vertex_tuning/validation.jsonl": 22
+  },
+  "limit_per_category": 160,
+  "include_canonical": false
+}
