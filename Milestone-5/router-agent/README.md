@@ -91,6 +91,16 @@ Additional schema findings from `router_eval_metrics.json`:
   ```
   Replace `<router_predictions.jsonl>` with model outputs (one JSON per line) to obtain subset metrics and length checks.
 
+- **Automated Pass/Fail Check**
+  ```bash
+  python Milestone-5/router-agent/router_benchmark_runner.py \
+    --gold Milestone-5/router-agent/benchmarks/router_benchmark_hard.jsonl \
+    --pred <router_predictions.jsonl> \
+    --thresholds Milestone-5/router-agent/router_benchmark_thresholds.json \
+    --out Milestone-5/router-agent/benchmarks/router_benchmark_report.json
+  ```
+  The runner imports `schema_score`, evaluates every subset, and compares metrics against the thresholds registry so CI can gate deployments.
+
 ## Backlog / Next Steps
 1. Wire schema-score metrics into CI so every router checkpoint uploads per-subset accuracy and length ratios.
 2. Expand the benchmark with synthetic math-first prompts to further balance the canonical-route bias.
@@ -105,4 +115,6 @@ Artifacts leveraged in this milestone:
 - `Milestone-5/router-agent/benchmarks/deep_router_benchmark_stats.json`
 - `Milestone-5/router-agent/benchmarks/router_benchmark_hard.jsonl`
 - `Milestone-5/router-agent/benchmarks/router_benchmark_hard_stats.json`
+- `Milestone-5/router-agent/router_benchmark_thresholds.json`
+- `Milestone-5/router-agent/router_benchmark_runner.py`
 - `Milestone-3/router-agent-scripts/data/vertex_tuning/{train,validation,test}.jsonl`

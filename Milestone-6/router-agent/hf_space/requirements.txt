@@ -1,0 +1,3 @@
+gradio>=4.36.1
+huggingface_hub>=0.24.5
+orjson>=3.10.7
