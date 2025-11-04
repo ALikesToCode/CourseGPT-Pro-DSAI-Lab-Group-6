@@ -6,16 +6,72 @@
 - **Finalize** the project report with clear deployment instructions, evaluation tables, and follow-up work.
 
 ## Current Scaffolding
-- `hf_space/app.py` — Gradio Blocks skeleton that:
+- `hf_space/app.py` — Gradio Blocks scaffold that:
   - Calls the router model via Hugging Face Inference (environment-driven) or falls back to a sample JSON plan.
   - Validates responses with lightweight structural checks.
-  - Exposes a “Benchmark” tab that runs the Milestone 5 hard benchmark (`router_benchmark_runner.py`) against uploaded predictions.
+  - Simulates agent execution with pluggable `/math`, `/code`, `/general-search` handlers (try → fallback to Gemini 2.5 Pro when configured).
+  - Exposes a “Benchmark” tab that both auto-runs startup checks (when `ROUTER_BENCHMARK_PREDICTIONS` is set) and evaluates uploaded predictions via `router_benchmark_runner.py`.
 - `hf_space/requirements.txt` — Minimal dependencies for the Space (`gradio`, `huggingface_hub`, `orjson`).
 - `hf_space/space_config.json` — Placeholder Space metadata (title, emoji, SDK). Update once the deployment target is confirmed.
 - `../agents/base.py` — Shared `AgentRequest`/`AgentResult` dataclasses and `AgentHandler` protocol.
-- `../math-agent`, `../code-agent`, `../general-agent` — Stub handlers + READMEs where team members can plug in specialised logic.
+- `../math-agent`, `../code-agent`, `../general-agent` — Stub handlers, a math-agent template, and READMEs where team members can plug in specialised logic.
 
 The scaffolding imports the Milestone 5 evaluation utilities (`schema_score`, `router_benchmark_runner`) so we can keep a single source of truth for metrics and thresholds.
+
+## Environment Variables
+- `HF_ROUTER_REPO` / `HF_TOKEN` — Hugging Face inference endpoint for the router adapter (optional; falls back to sample plan).
+  - Recommended value: `CourseGPT-Pro-DSAI-Lab-Group-6/router-gemma3-peft` (LoRA adapter hosted on the Hub).
+- `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) / `GEMINI_MODEL` — Enable Gemini 2.5 Pro fallback for agent failures (`google-generativeai`).
+- `ROUTER_BENCHMARK_PREDICTIONS` — Path to a JSONL file of predictions that should be validated automatically on startup.
+- `MATH_AGENT_MODEL`, `CODE_AGENT_MODEL`, `GENERAL_AGENT_CONFIG` — Suggested knobs for specialised agents.
+
+### GPU / ZeroGPU Setup
+- Install optional CUDA-ready frameworks when upgrading hardware:
+  ```text
+  --extra-index-url https://download.pytorch.org/whl/cu118
+  torch
+  -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+  jax[cuda11_pip]
+  jaxlib
+  tensorflow
+  ```
+- ZeroGPU requires a PRO subscription on personal accounts. After switching the Space hardware to **ZeroGPU**, import `spaces` and decorate GPU-bound functions with `@spaces.GPU` (already available via `spaces>=0.3.0` in `requirements.txt`). Example:
+  ```python
+  import spaces
+
+  @spaces.GPU
+  def heavy_route(prompt: str):
+      ...
+  ```
+- Verify GPU visibility from the Space logs as needed:
+  ```python
+  import torch, jax, tensorflow as tf
+  print("CUDA available:", torch.cuda.is_available())
+  print("JAX devices:", jax.devices())
+  print(tf.config.list_physical_devices('GPU'))
+  ```
+- Remember billing starts once upgraded hardware is running. Adjust the Space's sleep time or manually pause it to control costs.
+
+### Deploy via Hugging Face CLI
+```bash
+huggingface-cli login  # or set HF_TOKEN
+huggingface-cli repo create router-control-room \
+  --type space --space_sdk gradio \
+  --organization CourseGPT-Pro-DSAI-Lab-Group-6 --yes
+cd Milestone-6/router-agent/hf_space
+huggingface-cli upload . CourseGPT-Pro-DSAI-Lab-Group-6/router-control-room --repo-type space
+```
+Set the environment variables above in the Space settings dashboard (or via `huggingface-cli secrets set --repo CourseGPT-Pro-DSAI-Lab-Group-6/router-control-room <NAME> <VALUE>`) before going live.  
+To disable devcontainers/OpenVSCode on Spaces (avoids build errors), include `.huggingface/spaces.yml` with:
+
+```yaml
+sdk: gradio
+python_version: 3.10
+app_file: app.py
+devcontainers: false
+```
+
+**Live instance (private account, CPU Basic):** https://huggingface.co/spaces/Alovestocode/router-control-room-private
 
 ## Deployment Roadmap
 1. **Router model wiring**
@@ -34,7 +90,7 @@ The scaffolding imports the Milestone 5 evaluation utilities (`schema_score`, `r
 
 ## Next Actions
 - [ ] Finalise router model selection (Gemma 3 vs Qwen 3) for deployment.
-- [ ] Implement inference client in `hf_space/app.py` (Hugging Face `InferenceClient` or Vertex endpoint).
-- [ ] Integrate schema-aware validation + benchmark trigger into the Gradio UI.
+- [x] Implement inference client in `hf_space/app.py` (Hugging Face `InferenceClient` or Vertex endpoint).
+- [x] Integrate schema-aware validation + benchmark trigger into the Gradio UI.
 - [ ] Draft deployment notes covering Space configuration, CI triggers, and rollback strategy.
 - [ ] Extend the documentation template so math/code/general agents can drop in routes, assets, and citations.
