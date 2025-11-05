@@ -4,13 +4,27 @@ import json
 import os
 import sys
 import tempfile
+from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import importlib.util
 import re
 
 import gradio as gr
+
+try:
+    import spaces  # type: ignore
+except Exception:  # pragma: no cover - spaces is only available inside HF Spaces.
+    spaces = None
+
+
+def _gpu_decorator(*args, **kwargs):
+    if spaces is None:
+        def identity(fn):
+            return fn
+        return identity
+    return spaces.GPU(*args, **kwargs)
 
 # Ensure Milestone 5 evaluation utilities are importable when running inside the Space.
 APP_PATH = Path(__file__).resolve()
@@ -62,8 +76,66 @@ except Exception:  # pragma: no cover
     InferenceClient = None  # type: ignore
 
 
-HF_ROUTER_REPO = os.environ.get("HF_ROUTER_REPO", "")
+HF_ROUTER_REPO_ENV = os.environ.get("HF_ROUTER_REPO", "")
 HF_TOKEN = os.environ.get("HF_TOKEN")
+
+RouterOption = Dict[str, Optional[str]]
+
+
+def _make_option(label: str, base: Optional[str], adapter: Optional[str] = None) -> RouterOption:
+    return {"label": label, "base": base, "adapter": adapter}
+
+
+ROUTER_OPTIONS_LIST: List[RouterOption] = [
+    _make_option("Use sample plan (no remote model)", ""),
+    _make_option(
+        "Llama 3.1 8B Router Adapter",
+        "meta-llama/Llama-3.1-8B",
+        "CourseGPT-Pro-DSAI-Lab-Group-6/router-llama31-peft",
+    ),
+    _make_option("Llama 3.1 8B Base Model", "meta-llama/Llama-3.1-8B"),
+    _make_option(
+        "Gemma 3 27B Router Adapter",
+        "google/gemma-3-27b-pt",
+        "CourseGPT-Pro-DSAI-Lab-Group-6/router-gemma3-peft",
+    ),
+    _make_option("Gemma 3 27B Base Model", "google/gemma-3-27b-pt"),
+    _make_option(
+        "Qwen3 32B Router Adapter",
+        "Qwen/Qwen3-32B",
+        "CourseGPT-Pro-DSAI-Lab-Group-6/router-qwen3-32b-peft",
+    ),
+    _make_option("Qwen3 32B Base Model", "Qwen/Qwen3-32B"),
+]
+
+AVAILABLE_ROUTER_OPTIONS: OrderedDict[str, RouterOption] = OrderedDict(
+    (opt["label"], opt) for opt in ROUTER_OPTIONS_LIST
+)
+
+
+def _match_env_to_option(env_value: str) -> Optional[str]:
+    for label, option in AVAILABLE_ROUTER_OPTIONS.items():
+        if option.get("base") == env_value or option.get("adapter") == env_value:
+            return label
+    return None
+
+
+DEFAULT_ROUTER_LABEL = _match_env_to_option(HF_ROUTER_REPO_ENV) or "Use sample plan (no remote model)"
+
+if HF_ROUTER_REPO_ENV and DEFAULT_ROUTER_LABEL == "Use sample plan (no remote model)" and HF_ROUTER_REPO_ENV:
+    custom_label = f"Env configured model ({HF_ROUTER_REPO_ENV})"
+    AVAILABLE_ROUTER_OPTIONS[custom_label] = _make_option(custom_label, HF_ROUTER_REPO_ENV)
+    DEFAULT_ROUTER_LABEL = custom_label
+
+CLIENT_CACHE: Dict[str, Optional[Any]] = {}
+CLIENT_ERRORS: Dict[str, str] = {}
+DEFAULT_ROUTER_OPTION = AVAILABLE_ROUTER_OPTIONS[DEFAULT_ROUTER_LABEL]
+
+
+def _option_key(option: RouterOption) -> str:
+    base = option.get("base") or ""
+    adapter = option.get("adapter") or ""
+    return f"{base}||{adapter}"
 
 if EVAL_DIR.exists():
     BENCH_GOLD_PATH = EVAL_DIR / "benchmarks" / "router_benchmark_hard.jsonl"
@@ -71,18 +143,6 @@ if EVAL_DIR.exists():
 else:
     BENCH_GOLD_PATH = LOCAL_LIB_DIR / "router_benchmark_hard.jsonl"
     THRESHOLDS_PATH = LOCAL_LIB_DIR / "router_benchmark_thresholds.json"
-
-client = None
-if HF_ROUTER_REPO and InferenceClient is not None:
-    try:
-        client = InferenceClient(model=HF_ROUTER_REPO, token=HF_TOKEN)
-    except Exception as exc:  # pragma: no cover
-        client = None
-        ROUTER_LOAD_ERROR = str(exc)
-    else:
-        ROUTER_LOAD_ERROR = ""
-else:
-    ROUTER_LOAD_ERROR = "InferenceClient unavailable or HF_ROUTER_REPO unset."
 
 
 SYSTEM_PROMPT = (
@@ -307,8 +367,6 @@ AGENT_STATUS_MARKDOWN = (
     "\n".join(f"- {line}" for line in AGENT_LOAD_LOG) if AGENT_LOAD_LOG else "- Agent stubs loaded successfully."
 )
 
-STARTUP_BENCHMARK_RESULT = run_startup_benchmark()
-
 def load_sample_plan() -> Dict[str, Any]:
     try:
         if BENCH_GOLD_PATH.exists():
@@ -365,46 +423,143 @@ SAMPLE_PLAN = load_sample_plan()
 TOOL_REGEX = re.compile(r"^\s*(/[a-zA-Z0-9_-]+)")
 
 
-def extract_json_from_text(raw_text: str) -> Dict[str, Any]:
+def get_inference_client(option: RouterOption) -> Optional[Any]:
+    base_repo = option.get("base")
+    if not base_repo:
+        return None
+    if InferenceClient is None:
+        CLIENT_ERRORS[_option_key(option)] = "huggingface_hub InferenceClient unavailable in this runtime."
+        CLIENT_CACHE[_option_key(option)] = None
+        return None
+    key = _option_key(option)
+    if key in CLIENT_CACHE:
+        return CLIENT_CACHE[key]
     try:
-        start = raw_text.index("{")
-        end = raw_text.rfind("}")
-        candidate = raw_text[start : end + 1]
-        return json.loads(candidate)
-    except Exception as exc:
-        raise ValueError(f"Router output is not valid JSON: {exc}") from exc
+        client = InferenceClient(model=base_repo, token=HF_TOKEN)
+    except Exception as exc:  # pragma: no cover
+        CLIENT_ERRORS[key] = str(exc)
+        CLIENT_CACHE[key] = None
+        return None
+    CLIENT_ERRORS.pop(key, None)
+    CLIENT_CACHE[key] = client
+    return client
 
 
-def call_router_model(user_query: str) -> Dict[str, Any]:
-    if client is None:
+def describe_router_backend(option: RouterOption) -> str:
+    base_repo = option.get("base") or ""
+    adapter_repo = option.get("adapter") or ""
+    if not base_repo:
+        return "Router backend not configured; using bundled sample plan."
+    if InferenceClient is None:
+        return "Router backend unavailable: huggingface_hub.InferenceClient is not installed."
+    key = _option_key(option)
+    error = CLIENT_ERRORS.get(key)
+    if error:
+        return f"Router backend failed to initialise `{base_repo}`: {error}"
+    if key not in CLIENT_CACHE:
+        # Ensure lazy init so that status reflects actual connection when possible.
+        get_inference_client(option)
+        error = CLIENT_ERRORS.get(key)
+        if error:
+            return f"Router backend failed to initialise `{base_repo}`: {error}"
+    if adapter_repo:
+        return f"Using base model `{base_repo}` with adapter `{adapter_repo}`"
+    return f"Using Hugging Face Inference endpoint: `{base_repo}`"
+
+
+def extract_json_from_text(raw_text: str) -> Dict[str, Any]:
+    start = raw_text.find("{")
+    if start == -1:
+        raise ValueError("Router output did not contain a JSON object.")
+
+    depth = 0
+    in_string = False
+    escape = False
+    for idx in range(start, len(raw_text)):
+        char = raw_text[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = raw_text[start : idx + 1]
+                try:
+                    return json.loads(candidate)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Router output is not valid JSON: {exc}") from exc
+                finally:
+                    break
+    raise ValueError("Router output contained an unterminated JSON object.")
+
+
+def call_router_model(user_query: str, option: RouterOption) -> Dict[str, Any]:
+    base_repo = option.get("base") or ""
+    adapter_repo = option.get("adapter") or ""
+    if not base_repo:
         return SAMPLE_PLAN
+    inference_client = get_inference_client(option)
+    if inference_client is None:
+        error = CLIENT_ERRORS.get(_option_key(option)) or "Unknown client initialisation error."
+        return {
+            "error": f"Router call skipped: {error}",
+            "sample_plan": SAMPLE_PLAN,
+        }
 
     prompt = f"{SYSTEM_PROMPT}\n\nUser query:\n{user_query.strip()}\n"
     try:
-        raw = client.text_generation(
+        generation_kwargs = {
+            "max_new_tokens": 900,
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "repetition_penalty": 1.05,
+        }
+        if adapter_repo:
+            generation_kwargs["adapter_id"] = adapter_repo
+        raw = inference_client.text_generation(
             prompt,
-            max_new_tokens=900,
-            temperature=0.2,
-            top_p=0.9,
-            repetition_penalty=1.05,
+            **generation_kwargs,
         )
         return extract_json_from_text(raw)
     except Exception as exc:  # pragma: no cover
+        CLIENT_ERRORS[_option_key(option)] = f"{exc.__class__.__name__}: {exc}"
         return {
-            "error": f"Router call failed ({exc}). Falling back to sample plan.",
+            "error": f"Router call failed ({exc.__class__.__name__}: {exc}). Falling back to sample plan.",
             "sample_plan": SAMPLE_PLAN,
         }
 
 
-def generate_plan(user_query: str) -> Dict[str, Any]:
+@_gpu_decorator(duration=120)
+def gpu_router_plan(user_query: str, option: RouterOption) -> Dict[str, Any]:
+    """GPU-backed wrapper so ZeroGPU hardware provisions the accelerator on demand."""
+    return call_router_model(user_query, option)
+
+
+def generate_plan(user_query: str, router_option_label: str) -> Dict[str, Any]:
     if not user_query.strip():
         raise gr.Error("Please provide a user query to route.")
-    plan = call_router_model(user_query)
+    option = AVAILABLE_ROUTER_OPTIONS.get(router_option_label, AVAILABLE_ROUTER_OPTIONS["Use sample plan (no remote model)"])
+    use_gpu = spaces is not None and os.environ.get("ROUTER_FORCE_CPU", "").lower() not in {"1", "true", "yes"}
+    plan = (
+        gpu_router_plan(user_query, option)
+        if use_gpu
+        else call_router_model(user_query, option)
+    )
     return plan
 
 
-def generate_plan_and_store(user_query: str) -> tuple[Dict[str, Any], str]:
-    plan = generate_plan(user_query)
+def generate_plan_and_store(user_query: str, router_option_label: str) -> tuple[Dict[str, Any], str]:
+    plan = generate_plan(user_query, router_option_label)
     return plan, user_query
 
 
@@ -536,6 +691,28 @@ def run_startup_benchmark() -> Dict[str, Any]:
     }
 
 
+def _compute_startup_benchmark() -> Dict[str, Any]:
+    """Run the optional startup benchmark without crashing the Space on failure."""
+    try:
+        return run_startup_benchmark()
+    except NameError:
+        return {
+            "status": "unavailable",
+            "message": (
+                "run_startup_benchmark() is not defined in the deployed bundle. "
+                "Redeploy the latest app.py."
+            ),
+        }
+    except Exception as exc:  # pragma: no cover - defensive guard for remote exec.
+        return {
+            "status": "error",
+            "message": f"Startup benchmark execution failed: {exc}",
+        }
+
+
+STARTUP_BENCHMARK_RESULT = _compute_startup_benchmark()
+
+
 def compute_structural_metrics(plan: Dict[str, Any]) -> Dict[str, Any]:
     metrics: Dict[str, Any] = {}
     route_plan = plan.get("route_plan", [])
@@ -660,22 +837,35 @@ def benchmark_predictions(pred_file: Any) -> Dict[str, Any]:
     }
 
 
-def describe_router_backend() -> str:
-    if client is None:
-        return f"Router backend not initialised. {ROUTER_LOAD_ERROR}"
-    return f"Using Hugging Face Inference endpoint: `{HF_ROUTER_REPO}`"
-
-
 with gr.Blocks(title="CourseGPT Router Control Room") as demo:
     gr.Markdown(
         "## CourseGPT Router Control Room\n"
         "Milestone 6 deployment scaffold for the router agent. Populate the router model "
-        "environment variables to enable live inference, or rely on the bundled sample plan."
+        "environment variables or select a hosted checkpoint to enable live inference."
     )
 
-    gr.Markdown(f"**Backend status:** {describe_router_backend()}")
+    initial_backend_status = f"**Backend status:** {describe_router_backend(DEFAULT_ROUTER_OPTION)}"
+    backend_status_md = gr.Markdown(initial_backend_status)
 
     with gr.Tab("Router Planner"):
+        router_option_state = gr.State(DEFAULT_ROUTER_LABEL)
+        model_selector = gr.Radio(
+            label="Router checkpoint",
+            choices=list(AVAILABLE_ROUTER_OPTIONS.keys()),
+            value=DEFAULT_ROUTER_LABEL,
+        )
+
+        def _set_router_option(choice: str) -> tuple[str, str]:
+            option = AVAILABLE_ROUTER_OPTIONS.get(choice, AVAILABLE_ROUTER_OPTIONS["Use sample plan (no remote model)"])
+            status = f"**Backend status:** {describe_router_backend(option)}"
+            return choice, status
+
+        model_selector.change(
+            fn=_set_router_option,
+            inputs=model_selector,
+            outputs=[router_option_state, backend_status_md],
+        )
+
         user_query_state = gr.State("")
         user_query = gr.Textbox(
             label="User query",
@@ -686,7 +876,7 @@ with gr.Blocks(title="CourseGPT Router Control Room") as demo:
         plan_output = gr.JSON(label="Router plan")
         generate_btn.click(
             fn=generate_plan_and_store,
-            inputs=user_query,
+            inputs=[user_query, router_option_state],
             outputs=[plan_output, user_query_state],
         )
 
@@ -696,10 +886,27 @@ with gr.Blocks(title="CourseGPT Router Control Room") as demo:
 
         execute_btn = gr.Button("Simulate agent execution")
         execution_output = gr.JSON(label="Agent execution log")
+        execution_markdown = gr.Markdown("")
+
+        def execute_plan_and_format(plan_input: Any, original_query: str) -> tuple[Dict[str, Any], str]:
+            result = execute_plan(plan_input, original_query)
+            if not result.get("success"):
+                return result, ""
+            combined_sections: List[str] = []
+            for entry in result.get("results", []):
+                content = entry.get("content")
+                if content:
+                    step_idx = entry.get("step_index")
+                    tool = entry.get("tool", "tool")
+                    header = f"### Step {step_idx + 1} ({tool})" if isinstance(step_idx, int) else f"### {tool}"
+                    combined_sections.append(f"{header}\n{content}")
+            combined_markdown = "\n\n".join(combined_sections)
+            return result, combined_markdown
+
         execute_btn.click(
-            fn=execute_plan,
+            fn=execute_plan_and_format,
             inputs=[plan_output, user_query_state],
-            outputs=execution_output,
+            outputs=[execution_output, execution_markdown],
         )
 
     with gr.Tab("Benchmark"):

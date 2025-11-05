@@ -19,8 +19,16 @@
 The scaffolding imports the Milestone 5 evaluation utilities (`schema_score`, `router_benchmark_runner`) so we can keep a single source of truth for metrics and thresholds.
 
 ## Environment Variables
-- `HF_ROUTER_REPO` / `HF_TOKEN` — Hugging Face inference endpoint for the router adapter (optional; falls back to sample plan).
-  - Recommended value: `CourseGPT-Pro-DSAI-Lab-Group-6/router-gemma3-peft` (LoRA adapter hosted on the Hub).
+- `HF_ROUTER_REPO` / `HF_TOKEN` — Hugging Face inference endpoint for the router adapter or full base model (optional; falls back to sample plan).
+  - The Space UI now exposes a selector with the following built-in choices:
+    - `CourseGPT-Pro-DSAI-Lab-Group-6/router-llama31-peft`
+    - `CourseGPT-Pro-DSAI-Lab-Group-6/router-gemma3-peft`
+    - `CourseGPT-Pro-DSAI-Lab-Group-6/router-qwen3-32b-peft`
+    - `meta-llama/Llama-3.1-8B`
+    - `google/gemma-3-27b-pt`
+    - `Qwen/Qwen3-32B`
+    - Adapter options automatically mount their corresponding base checkpoints when calling the Inference API.
+  - Provide `HF_ROUTER_REPO` if you want a default selection pre-populated when the Space boots.
 - `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) / `GEMINI_MODEL` — Enable Gemini 2.5 Pro fallback for agent failures (`google-generativeai`).
 - `ROUTER_BENCHMARK_PREDICTIONS` — Path to a JSONL file of predictions that should be validated automatically on startup.
 - `MATH_AGENT_MODEL`, `CODE_AGENT_MODEL`, `GENERAL_AGENT_CONFIG` — Suggested knobs for specialised agents.
