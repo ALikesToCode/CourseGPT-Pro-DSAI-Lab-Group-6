@@ -20,56 +20,29 @@ endpoint via the `HF_ROUTER_API` environment variable.
 
 | File | Purpose |
 | ---- | ------- |
-| `app.py` | Loads the merged checkpoint on demand, exposes a `/v1/generate` API, and ships an interactive Gradio UI for manual testing. |
+| `app.py` | Loads the merged checkpoint on demand (defaults to `Alovestocode/router-qwen3-32b-merged`), exposes a `/v1/generate` API, and ships an interactive Gradio UI for manual testing. |
 | `requirements.txt` | Minimal dependency set (transformers, bitsandbytes, torch, gradio, fastapi). |
 | `.huggingface/spaces.yml` | Configures the Space for ZeroGPU hardware and disables automatic sleep. |
 
 ## Deployment Steps
 
-1. **Merge and upload the router adapter**
-   ```python
-   from peft import PeftModel
-   from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-   import torch
-
-   BASE = "Qwen/Qwen3-32B"
-   ADAPTER = "CourseGPT-Pro-DSAI-Lab-Group-6/router-qwen3-32b-peft"
-
-   quant_cfg = BitsAndBytesConfig(load_in_4bit=True,
-                                  bnb_4bit_compute_dtype=torch.bfloat16)
-
-   tok = AutoTokenizer.from_pretrained(BASE, use_fast=False)
-   base = AutoModelForCausalLM.from_pretrained(
-       BASE,
-       quantization_config=quant_cfg,
-       device_map="auto",
-       trust_remote_code=True,
-   )
-
-   merged = PeftModel.from_pretrained(base, ADAPTER).merge_and_unload()
-   save_dir = "router-qwen3-32b-4bit"
-   merged.save_pretrained(save_dir)
-   tok.save_pretrained(save_dir)
-   ```
-   Upload `router-qwen3-32b-4bit/` to a new model repo (e.g. `Alovestocode/router-qwen3-32b-4bit`).
-
-2. **Create the Space**
+1. **Create the Space**
    ```bash
    huggingface-cli repo create router-router-zero \
      --type space --sdk gradio --hardware zerogpu --yes
    ```
 
-3. **Publish the code**
+2. **Publish the code**
    ```bash
    cd Milestone-6/router-agent/zero-gpu-space
    huggingface-cli upload . Alovestocode/router-router-zero --repo-type space
    ```
 
-4. **Configure secrets**
-   - `MODEL_REPO` – defaults to `Alovestocode/router-qwen3-32b-4bit`
+3. **Configure secrets**
+   - `MODEL_REPO` – defaults to `Alovestocode/router-qwen3-32b-merged`
    - `HF_TOKEN` – token with read access to the merged model
 
-5. **Connect the main router UI**
+4. **Connect the main router UI**
    ```bash
    export HF_ROUTER_API=https://Alovestocode-router-router-zero.hf.space/v1/generate
    ```

@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover
 load_dotenv()
 
 
-MODEL_ID = os.environ.get("MODEL_REPO", "Alovestocode/router-qwen3-32b-4bit")
+MODEL_ID = os.environ.get("MODEL_REPO", "Alovestocode/router-qwen3-32b-merged")
 MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "600"))
 DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.2"))
 DEFAULT_TOP_P = float(os.environ.get("DEFAULT_TOP_P", "0.9"))
