@@ -72,6 +72,10 @@ The scaffolding imports the Milestone 5 evaluation utilities (`schema_score`, `r
   def heavy_route(prompt: str):
       ...
   ```
+- The backend Space now honours `MODEL_FALLBACKS` (comma-separated list) and `MODEL_LOAD_STRATEGY` (`8bit`, `4bit`, or `fp16`). Leave the defaults in place for ZeroGPU to prioritise Gemma/Llama checkpoints and load them in 8-bit quantisation.
+- Provide `MODEL_LOAD_STRATEGIES` (comma-separated) if you need a custom quantisation fallback order; otherwise the loader attempts `8bit → 4bit → bf16 → fp16 → cpu` automatically.
+- Deployment env knobs: `SKIP_WARM_START=1` defers loading until the first request, while
+  `ALLOW_WARM_START_FAILURE=1` prevents crash loops if ZeroGPU evicts the warm-up task.
 - Verify GPU visibility from the Space logs as needed:
   ```python
   import torch, jax, tensorflow as tf

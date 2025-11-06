@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import torch
 from fastapi import FastAPI, HTTPException
@@ -31,27 +31,120 @@ from transformers import (
 MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "600"))
 DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.2"))
 DEFAULT_TOP_P = float(os.environ.get("DEFAULT_TOP_P", "0.9"))
-USE_4BIT = os.environ.get("LOAD_IN_4BIT", "1") not in {"0", "false", "False"}
-USE_8BIT = os.environ.get("LOAD_IN_8BIT", "0").lower() in {"1", "true", "yes"}
+HF_TOKEN = os.environ.get("HF_TOKEN")
 
-MODEL_FALLBACKS = [
-    "Alovestocode/router-qwen3-32b-merged",
+def _normalise_bool(value: Optional[str], *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+_strategy = os.environ.get("MODEL_LOAD_STRATEGY") or os.environ.get("LOAD_STRATEGY")
+if _strategy:
+    _strategy = _strategy.lower().strip()
+
+# Backwards compatibility flags remain available for older deployments.
+USE_8BIT = _normalise_bool(os.environ.get("LOAD_IN_8BIT"), default=True)
+USE_4BIT = _normalise_bool(os.environ.get("LOAD_IN_4BIT"), default=False)
+
+SKIP_WARM_START = _normalise_bool(os.environ.get("SKIP_WARM_START"), default=False)
+ALLOW_WARM_START_FAILURE = _normalise_bool(
+    os.environ.get("ALLOW_WARM_START_FAILURE"),
+    default=False,
+)
+
+
+def _normalise_strategy(name: Optional[str]) -> Optional[str]:
+    if not name:
+        return None
+    alias = name.lower().strip()
+    mapping = {
+        "8": "8bit",
+        "8bit": "8bit",
+        "int8": "8bit",
+        "bnb8": "8bit",
+        "llm.int8": "8bit",
+        "4": "4bit",
+        "4bit": "4bit",
+        "int4": "4bit",
+        "bnb4": "4bit",
+        "nf4": "4bit",
+        "bf16": "bf16",
+        "bfloat16": "bf16",
+        "fp16": "fp16",
+        "float16": "fp16",
+        "half": "fp16",
+        "cpu": "cpu",
+        "fp32": "cpu",
+        "full": "cpu",
+    }
+    canonical = mapping.get(alias, alias)
+    if canonical not in {"8bit", "4bit", "bf16", "fp16", "cpu"}:
+        return None
+    return canonical
+
+
+def _strategy_sequence() -> List[str]:
+    order: List[str] = []
+    seen: set[str] = set()
+
+    def push(entry: Optional[str]) -> None:
+        canonical = _normalise_strategy(entry)
+        if not canonical or canonical in seen:
+            return
+        seen.add(canonical)
+        order.append(canonical)
+
+    push(_strategy)
+    for raw in os.environ.get("MODEL_LOAD_STRATEGIES", "").split(","):
+        push(raw)
+
+    # Compatibility: honour legacy boolean switches.
+    if USE_8BIT:
+        push("8bit")
+    if USE_4BIT:
+        push("4bit")
+    if not (USE_8BIT or USE_4BIT):
+        push("bf16" if torch.cuda.is_available() else "cpu")
+
+    for fallback in ("8bit", "4bit", "bf16", "fp16", "cpu"):
+        push(fallback)
+    return order
+
+
+DEFAULT_MODEL_FALLBACKS: List[str] = [
     "Alovestocode/router-gemma3-merged",
+    "Alovestocode/router-llama31-merged",
+    "Alovestocode/router-qwen3-32b-merged",
 ]
+
+
+def _candidate_models() -> List[str]:
+    explicit = os.environ.get("MODEL_REPO")
+    overrides = [
+        item.strip()
+        for item in os.environ.get("MODEL_FALLBACKS", "").split(",")
+        if item.strip()
+    ]
+    candidates: List[str] = []
+    seen = set()
+    for name in [explicit, *overrides, *DEFAULT_MODEL_FALLBACKS]:
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        candidates.append(name)
+    return candidates
 
 
 def _initialise_tokenizer() -> tuple[str, AutoTokenizer]:
     errors: dict[str, str] = {}
-    candidates = []
-    explicit = os.environ.get("MODEL_REPO")
-    if explicit:
-        candidates.append(explicit)
-    for name in MODEL_FALLBACKS:
-        if name not in candidates:
-            candidates.append(name)
-    for candidate in candidates:
+    for candidate in _candidate_models():
         try:
-            tok = AutoTokenizer.from_pretrained(candidate, use_fast=False)
+            tok = AutoTokenizer.from_pretrained(
+                candidate,
+                use_fast=False,
+                token=HF_TOKEN,
+            )
             print(f"Loaded tokenizer from {candidate}")
             return candidate, tok
         except Exception as exc:  # pragma: no cover - download errors
@@ -78,27 +171,81 @@ class GenerateResponse(BaseModel):
 
 
 _MODEL = None
+ACTIVE_STRATEGY: Optional[str] = None
 
 
-@spaces.GPU(duration=120)
+def _build_load_kwargs(strategy: str, gpu_compute_dtype: torch.dtype) -> Tuple[str, dict]:
+    """Return kwargs for `from_pretrained` using the given strategy."""
+    cuda_available = torch.cuda.is_available()
+    strategy = strategy.lower()
+    kwargs: dict = {
+        "trust_remote_code": True,
+        "low_cpu_mem_usage": True,
+        "token": HF_TOKEN,
+    }
+    if strategy == "8bit":
+        if not cuda_available:
+            raise RuntimeError("8bit loading requires CUDA availability")
+        kwargs["device_map"] = "auto"
+        kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_8bit=True,
+            llm_int8_threshold=6.0,
+        )
+        return "8bit", kwargs
+    if strategy == "4bit":
+        if not cuda_available:
+            raise RuntimeError("4bit loading requires CUDA availability")
+        kwargs["device_map"] = "auto"
+        kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=gpu_compute_dtype,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
+        return "4bit", kwargs
+    if strategy == "bf16":
+        kwargs["device_map"] = "auto" if cuda_available else "cpu"
+        kwargs["torch_dtype"] = torch.bfloat16 if cuda_available else torch.float32
+        return "bf16", kwargs
+    if strategy == "fp16":
+        kwargs["device_map"] = "auto" if cuda_available else "cpu"
+        kwargs["torch_dtype"] = torch.float16 if cuda_available else torch.float32
+        return "fp16", kwargs
+    if strategy == "cpu":
+        kwargs["device_map"] = "cpu"
+        kwargs["torch_dtype"] = torch.float32
+        return "cpu", kwargs
+    raise ValueError(f"Unknown load strategy: {strategy}")
+
+
+@spaces.GPU(duration=300)
 def get_model() -> AutoModelForCausalLM:
-    global _MODEL
+    global _MODEL, ACTIVE_STRATEGY
     if _MODEL is None:
-        dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-        kwargs = {
-            "device_map": "auto",
-            "trust_remote_code": True,
-        }
-        if USE_8BIT:
-            kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
-        elif USE_4BIT:
-            kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=dtype,
-            )
-        else:
-            kwargs["torch_dtype"] = dtype
-        _MODEL = AutoModelForCausalLM.from_pretrained(MODEL_ID, **kwargs).eval()
+        compute_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+        attempts: List[Tuple[str, Exception]] = []
+        strategies = _strategy_sequence()
+        print(f"Attempting to load {MODEL_ID} with strategies: {strategies}")
+        for candidate in strategies:
+            try:
+                label, kwargs = _build_load_kwargs(candidate, compute_dtype)
+                print(f"Trying strategy '{label}' for {MODEL_ID} ...")
+                model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **kwargs)
+                _MODEL = model.eval()
+                ACTIVE_STRATEGY = label
+                print(f"Loaded {MODEL_ID} with strategy='{label}'")
+                break
+            except Exception as exc:  # pragma: no cover - depends on runtime
+                attempts.append((candidate, exc))
+                print(f"Strategy '{candidate}' failed: {exc}")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        if _MODEL is None:
+            detail = "; ".join(f"{name}: {err}" for name, err in attempts) or "no details"
+            last_exc = attempts[-1][1] if attempts else None
+            raise RuntimeError(
+                f"Unable to load {MODEL_ID}. Tried strategies {strategies}. Details: {detail}"
+            ) from last_exc
     return _MODEL
 
 
@@ -141,17 +288,28 @@ fastapi_app = FastAPI(title="Router Model API", version="1.0.0")
 
 @fastapi_app.get("/")
 def healthcheck() -> dict[str, str]:
-    return {"status": "ok", "model": MODEL_ID}
+    return {
+        "status": "ok",
+        "model": MODEL_ID,
+        "strategy": ACTIVE_STRATEGY or "pending",
+    }
 
 
 @fastapi_app.on_event("startup")
 def warm_start() -> None:
     """Ensure the GPU reservation is established during startup."""
+    if SKIP_WARM_START:
+        print("Warm start skipped (SKIP_WARM_START=1). Model loads on first request.")
+        return
     try:
         get_model()
     except Exception as exc:
+        message = f"Model warm-up failed: {exc}"
+        if ALLOW_WARM_START_FAILURE:
+            print(message)
+            return
         # Surface the failure early so the container exits with a useful log.
-        raise RuntimeError(f"Model warm-up failed: {exc}") from exc
+        raise RuntimeError(message) from exc
 
 
 @fastapi_app.post("/v1/generate", response_model=GenerateResponse)
