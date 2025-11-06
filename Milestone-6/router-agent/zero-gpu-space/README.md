@@ -21,7 +21,7 @@ endpoint via the `HF_ROUTER_API` environment variable.
 | File | Purpose |
 | ---- | ------- |
 | `app.py` | Loads the merged checkpoint on demand (tries `MODEL_REPO` first, then `router-qwen3-32b-merged`, `router-gemma3-merged`), exposes a `/v1/generate` API, and serves a small HTML console at `/gradio`. |
-| `requirements.txt` | Minimal dependency set (transformers, bitsandbytes, torch, fastapi, spaces). |
+| `requirements.txt` | Minimal dependency set (transformers, bitsandbytes, torch, fastapi, accelerate, spaces, uvicorn). |
 | `.huggingface/spaces.yml` | Configures the Space for ZeroGPU hardware and disables automatic sleep. |
 
 ## Deployment Steps
