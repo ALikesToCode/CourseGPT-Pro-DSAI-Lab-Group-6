@@ -194,8 +194,8 @@ with gr.Blocks(title="Router Model ZeroGPU Backend") as demo:
 
 
 demo.queue()
-app = gr.mount_gradio_app(fastapi_app, demo, path="/")
- 
+app = gr.mount_gradio_app(fastapi_app, demo, path="/gradio")
+
 
 if __name__ == "__main__":  # pragma: no cover
     # Hugging Face Spaces will serve the exported `app` automatically.
