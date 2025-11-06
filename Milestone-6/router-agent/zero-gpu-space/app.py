@@ -12,7 +12,15 @@ from pydantic import BaseModel
 try:
     import spaces  # type: ignore
 except Exception:  # pragma: no cover
-    spaces = None
+    class _SpacesShim:  # fallback for local runs
+        @staticmethod
+        def GPU(*_args, **_kwargs):
+            def identity(fn):
+                return fn
+
+            return identity
+
+    spaces = _SpacesShim()
 
 from transformers import (
     AutoModelForCausalLM,
@@ -70,16 +78,8 @@ class GenerateResponse(BaseModel):
 
 _MODEL = None
 
-if spaces is None:  # pragma: no cover - local testing path
-    def gpu_decorator(*args, **kwargs):  # type: ignore
-        def identity(fn):
-            return fn
-        return identity
-else:
-    gpu_decorator = spaces.GPU
 
-
-@gpu_decorator(duration=120)
+@spaces.GPU(duration=120)
 def get_model() -> AutoModelForCausalLM:
     global _MODEL
     if _MODEL is None:
