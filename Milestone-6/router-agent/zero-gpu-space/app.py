@@ -32,7 +32,6 @@ DEFAULT_TOP_P = float(os.environ.get("DEFAULT_TOP_P", "0.9"))
 USE_4BIT = os.environ.get("LOAD_IN_4BIT", "1") not in {"0", "false", "False"}
 
 MODEL_FALLBACKS = [
-    "Alovestocode/router-llama31-merged",
     "Alovestocode/router-qwen3-32b-merged",
     "Alovestocode/router-gemma3-merged",
 ]
