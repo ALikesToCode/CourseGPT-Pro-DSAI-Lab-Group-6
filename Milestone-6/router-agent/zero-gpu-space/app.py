@@ -6,25 +6,14 @@ from typing import Optional
 
 import torch
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-import gradio as gr
-import spaces
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
 )
-
-try:  # Load optional .env so Spaces and local runs behave the same.
-    from dotenv import load_dotenv
-except Exception:  # pragma: no cover
-    def load_dotenv(*_: object, **__: object) -> bool:
-        return False
-
-
-load_dotenv()
-
 
 MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "600"))
 DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.2"))
@@ -74,11 +63,9 @@ class GenerateResponse(BaseModel):
     text: str
 
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, use_fast=False)
 _MODEL = None
 
 
-@spaces.GPU(duration=120)
 def get_model() -> AutoModelForCausalLM:
     global _MODEL
     if _MODEL is None:
@@ -154,51 +141,59 @@ def generate_endpoint(payload: GeneratePayload) -> GenerateResponse:
     return GenerateResponse(text=text)
 
 
-def gradio_infer(
-    prompt: str,
-    max_new_tokens: int,
-    temperature: float,
-    top_p: float,
-) -> str:
-    return _generate(
-        prompt=prompt,
-        max_new_tokens=max_new_tokens,
-        temperature=temperature,
-        top_p=top_p,
-    )
+@fastapi_app.get("/gradio", response_class=HTMLResponse)
+def interactive_ui() -> str:
+    return """
+    <!doctype html>
+    <html>
+    <head>
+      <title>Router Control Room</title>
+      <style>
+        body { font-family: sans-serif; margin: 40px; max-width: 900px; }
+        textarea, input { width: 100%; }
+        textarea { height: 180px; }
+        pre { background: #111; color: #0f0; padding: 16px; border-radius: 8px; }
+      </style>
+    </head>
+    <body>
+      <h1>Router Control Room</h1>
+      <p>This lightweight UI calls <code>/v1/generate</code>. Provide a full router prompt below.</p>
+      <label>Prompt</label>
+      <textarea id="prompt" placeholder="Include system text + user query..."></textarea>
+      <label>Max new tokens</label>
+      <input id="max_tokens" type="number" value="600" min="64" max="1024" step="16" />
+      <label>Temperature</label>
+      <input id="temperature" type="number" value="0.2" min="0" max="2" step="0.05" />
+      <label>Top-p</label>
+      <input id="top_p" type="number" value="0.9" min="0" max="1" step="0.05" />
+      <button onclick="callRouter()">Generate plan</button>
+      <h2>Response</h2>
+      <pre id="response">(waiting)</pre>
+      <script>
+        async function callRouter() {
+          const resp = await fetch("/v1/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: document.getElementById("prompt").value,
+              max_new_tokens: Number(document.getElementById("max_tokens").value),
+              temperature: Number(document.getElementById("temperature").value),
+              top_p: Number(document.getElementById("top_p").value)
+            })
+          });
+          const json = await resp.json();
+          document.getElementById("response").textContent = JSON.stringify(json, null, 2);
+        }
+      </script>
+    </body>
+    </html>
+    """
 
 
-with gr.Blocks(title="Router Model ZeroGPU Backend") as demo:
-    gr.Markdown(
-        f"### {MODEL_ID}\n"
-        "This Space serves a merged router checkpoint for the CourseGPT project. "
-        "Use the `/v1/generate` REST endpoint for programmatic access."
-    )
-    with gr.Row():
-        prompt_box = gr.Textbox(
-            label="Prompt",
-            placeholder="Router system prompt + user query…",
-            lines=8,
-        )
-    with gr.Row():
-        max_tokens = gr.Slider(64, 1024, MAX_NEW_TOKENS, step=16, label="max_new_tokens")
-        temperature = gr.Slider(0.0, 1.5, DEFAULT_TEMPERATURE, step=0.05, label="temperature")
-        top_p = gr.Slider(0.1, 1.0, DEFAULT_TOP_P, step=0.05, label="top_p")
-    output_box = gr.Textbox(label="Router Response", lines=10)
-    run_btn = gr.Button("Generate", variant="primary")
-    run_btn.click(
-        fn=gradio_infer,
-        inputs=[prompt_box, max_tokens, temperature, top_p],
-        outputs=output_box,
-    )
-
-
-demo.queue()
-app = gr.mount_gradio_app(fastapi_app, demo, path="/gradio")
+app = fastapi_app
 
 
 if __name__ == "__main__":  # pragma: no cover
-    # Hugging Face Spaces will serve the exported `app` automatically.
-    # Running uvicorn manually can conflict with the platform proxy, so we deliberately
-    # no-op here.
-    pass
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 7860)))
