@@ -9,6 +9,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+try:
+    import spaces  # type: ignore
+except Exception:  # pragma: no cover
+    spaces = None
+
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -66,6 +71,15 @@ class GenerateResponse(BaseModel):
 _MODEL = None
 
 
+def _spaces_gpu(*args, **kwargs):
+    if spaces is None:
+        def identity(fn):
+            return fn
+        return identity
+    return spaces.GPU(*args, **kwargs)
+
+
+@_spaces_gpu(duration=120)
 def get_model() -> AutoModelForCausalLM:
     global _MODEL
     if _MODEL is None:
