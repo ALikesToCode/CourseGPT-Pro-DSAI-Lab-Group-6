@@ -41,6 +41,16 @@ The scaffolding imports the Milestone 5 evaluation utilities (`schema_score`, `r
   The script reuses the Space inference logic (text generation → conversational fallback) and surfaces errors such as missing tokens or malformed JSON.
 - To avoid hosted inference limits, deploy the merged checkpoint to the ZeroGPU Space scaffold under `zero-gpu-space/` and set `HF_ROUTER_API` to the resulting `/v1/generate` endpoint.
 
+### CI/CD
+- A GitHub Actions workflow (`.github/workflows/deploy-router-spaces.yml`) runs on every push touching `Milestone-6/router-agent/**`. It performs a syntax check and, when configured, publishes both Spaces automatically via `huggingface-cli upload`.
+- Required repository settings:
+  - Secrets:
+    - `HF_TOKEN` – Hugging Face access token with write permission on the target Spaces.
+  - Variables (or additional secrets):
+    - `HF_SPACE_MAIN` – slug of the router UI Space (e.g. `Alovestocode/router-control-room-private`).
+    - `HF_SPACE_ZERO` – slug of the ZeroGPU backend Space (e.g. `Alovestocode/router-router-zero`).
+- If any of the above are missing, the workflow skips the corresponding deployment step and exits successfully.
+
 ### GPU / ZeroGPU Setup
 - Install optional CUDA-ready frameworks when upgrading hardware:
   ```text
