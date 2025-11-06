@@ -163,10 +163,10 @@ with gr.Blocks(title="Router Model ZeroGPU Backend") as demo:
     )
 
 
-app = gr.mount_gradio_app(fastapi_app, demo, path="/")
+mounted_app = gr.mount_gradio_app(fastapi_app, demo, path="/")
 
 
 if __name__ == "__main__":  # pragma: no cover - entry point for Spaces runtime
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 7860)))
+    uvicorn.run(mounted_app, host="0.0.0.0", port=int(os.environ.get("PORT", 7860)))
