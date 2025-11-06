@@ -1,9 +1,9 @@
 accelerate==0.34.2
 bitsandbytes==0.43.3
 fastapi==0.115.0
-gradio==5.5.0
+gradio==5.31.0
 python-dotenv==1.0.1
 spaces==0.42.0
-torch==2.5.1
-transformers==4.46.1
+torch==2.8.0
+transformers==4.53.0
 uvicorn==0.30.6
