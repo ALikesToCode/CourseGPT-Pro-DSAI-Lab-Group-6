@@ -141,6 +141,11 @@ def healthcheck() -> dict[str, str]:
     return {"status": "ok", "model": MODEL_ID}
 
 
+@fastapi_app.get("/")
+def healthcheck() -> dict[str, str]:
+    return {"status": "ok", "model": MODEL_ID}
+
+
 @fastapi_app.post("/v1/generate", response_model=GenerateResponse)
 def generate_endpoint(payload: GeneratePayload) -> GenerateResponse:
     try:
