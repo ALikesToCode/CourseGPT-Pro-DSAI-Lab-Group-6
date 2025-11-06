@@ -39,7 +39,7 @@ The scaffolding imports the Milestone 5 evaluation utilities (`schema_score`, `r
   HF_TOKEN=hf_xxx python Milestone-6/router-agent/test_router_models.py --models "Gemma 3 27B Router Adapter"
   ```
   The script reuses the Space inference logic (text generation → conversational fallback) and surfaces errors such as missing tokens or malformed JSON.
-- To avoid hosted inference limits, deploy the merged checkpoint to the ZeroGPU Space scaffold under `zero-gpu-space/` and set `HF_ROUTER_API` to the resulting `/v1/generate` endpoint. The current merged models live at:
+- To avoid hosted inference limits, deploy the merged checkpoint to the ZeroGPU Space scaffold under `zero-gpu-space/` and set `HF_ROUTER_API` to the resulting `/v1/generate` endpoint. The current merged models live at (default Space uses the lighter Llama checkpoint):
   - `Alovestocode/router-qwen3-32b-merged`
   - `Alovestocode/router-llama31-merged`
   - `Alovestocode/router-gemma3-merged`

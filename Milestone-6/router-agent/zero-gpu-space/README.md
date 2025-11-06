@@ -20,7 +20,7 @@ endpoint via the `HF_ROUTER_API` environment variable.
 
 | File | Purpose |
 | ---- | ------- |
-| `app.py` | Loads the merged checkpoint on demand (defaults to `Alovestocode/router-qwen3-32b-merged`), exposes a `/v1/generate` API, and ships an interactive Gradio UI for manual testing. |
+| `app.py` | Loads the merged checkpoint on demand (defaults to `Alovestocode/router-llama31-merged` for faster startup), exposes a `/v1/generate` API, and ships an interactive Gradio UI for manual testing. |
 | `requirements.txt` | Minimal dependency set (transformers, bitsandbytes, torch, gradio, fastapi). |
 | `.huggingface/spaces.yml` | Configures the Space for ZeroGPU hardware and disables automatic sleep. |
 
@@ -39,7 +39,7 @@ endpoint via the `HF_ROUTER_API` environment variable.
    ```
 
 3. **Configure secrets**
-   - `MODEL_REPO` – defaults to `Alovestocode/router-qwen3-32b-merged`
+   - `MODEL_REPO` – defaults to `Alovestocode/router-llama31-merged` (override if you need the larger Qwen/Gemma checkpoints)
    - `HF_TOKEN` – token with read access to the merged model
 
 4. **Connect the main router UI**
