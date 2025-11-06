@@ -70,16 +70,16 @@ class GenerateResponse(BaseModel):
 
 _MODEL = None
 
-
-def _spaces_gpu(*args, **kwargs):
-    if spaces is None:
+if spaces is None:  # pragma: no cover - local testing path
+    def gpu_decorator(*args, **kwargs):  # type: ignore
         def identity(fn):
             return fn
         return identity
-    return spaces.GPU(*args, **kwargs)
+else:
+    gpu_decorator = spaces.GPU
 
 
-@_spaces_gpu(duration=120)
+@gpu_decorator(duration=120)
 def get_model() -> AutoModelForCausalLM:
     global _MODEL
     if _MODEL is None:
@@ -134,11 +134,6 @@ def _generate(
 
 
 fastapi_app = FastAPI(title="Router Model API", version="1.0.0")
-
-
-@fastapi_app.get("/")
-def healthcheck() -> dict[str, str]:
-    return {"status": "ok", "model": MODEL_ID}
 
 
 @fastapi_app.get("/")
