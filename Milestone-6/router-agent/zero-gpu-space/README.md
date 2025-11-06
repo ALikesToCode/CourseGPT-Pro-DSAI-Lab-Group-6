@@ -20,7 +20,7 @@ endpoint via the `HF_ROUTER_API` environment variable.
 
 | File | Purpose |
 | ---- | ------- |
-| `app.py` | Loads the merged checkpoint on demand (defaults to `Alovestocode/router-llama31-merged` for faster startup), exposes a `/v1/generate` API, and ships an interactive Gradio UI for manual testing. |
+| `app.py` | Loads the merged checkpoint on demand (tries `MODEL_REPO` first, then `router-llama31-merged`, `router-qwen3-32b-merged`, `router-gemma3-merged`), exposes a `/v1/generate` API, and ships an interactive Gradio UI for manual testing. |
 | `requirements.txt` | Minimal dependency set (transformers, bitsandbytes, torch, gradio, fastapi). |
 | `.huggingface/spaces.yml` | Configures the Space for ZeroGPU hardware and disables automatic sleep. |
 

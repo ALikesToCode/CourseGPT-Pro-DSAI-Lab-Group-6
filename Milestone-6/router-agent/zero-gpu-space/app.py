@@ -26,11 +26,42 @@ except Exception:  # pragma: no cover
 load_dotenv()
 
 
-MODEL_ID = os.environ.get("MODEL_REPO", "Alovestocode/router-llama31-merged")
 MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "600"))
 DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.2"))
 DEFAULT_TOP_P = float(os.environ.get("DEFAULT_TOP_P", "0.9"))
 USE_4BIT = os.environ.get("LOAD_IN_4BIT", "1") not in {"0", "false", "False"}
+
+MODEL_FALLBACKS = [
+    "Alovestocode/router-llama31-merged",
+    "Alovestocode/router-qwen3-32b-merged",
+    "Alovestocode/router-gemma3-merged",
+]
+
+
+def _initialise_tokenizer() -> tuple[str, AutoTokenizer]:
+    errors: dict[str, str] = {}
+    candidates = []
+    explicit = os.environ.get("MODEL_REPO")
+    if explicit:
+        candidates.append(explicit)
+    for name in MODEL_FALLBACKS:
+        if name not in candidates:
+            candidates.append(name)
+    for candidate in candidates:
+        try:
+            tok = AutoTokenizer.from_pretrained(candidate, use_fast=False)
+            print(f"Loaded tokenizer from {candidate}")
+            return candidate, tok
+        except Exception as exc:  # pragma: no cover - download errors
+            errors[candidate] = str(exc)
+            print(f"Tokenizer load failed for {candidate}: {exc}")
+    raise RuntimeError(
+        "Unable to load any router model. Tried:\n" +
+        "\n".join(f"- {k}: {v}" for k, v in errors.items())
+    )
+
+
+MODEL_ID, tokenizer = _initialise_tokenizer()
 
 
 class GeneratePayload(BaseModel):
