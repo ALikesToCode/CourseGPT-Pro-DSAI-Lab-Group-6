@@ -33,6 +33,14 @@ The scaffolding imports the Milestone 5 evaluation utilities (`schema_score`, `r
 - `ROUTER_BENCHMARK_PREDICTIONS` — Path to a JSONL file of predictions that should be validated automatically on startup.
 - `MATH_AGENT_MODEL`, `CODE_AGENT_MODEL`, `GENERAL_AGENT_CONFIG` — Suggested knobs for specialised agents.
 
+### Smoke-test router endpoints locally
+- Use `Milestone-6/router-agent/test_router_models.py` to verify that each configured base/adapter pair responds with valid router JSON before deploying (install `python-dotenv` if you want `.env` auto-loading):
+  ```bash
+  HF_TOKEN=hf_xxx python Milestone-6/router-agent/test_router_models.py --models "Gemma 3 27B Router Adapter"
+  ```
+  The script reuses the Space inference logic (text generation → conversational fallback) and surfaces errors such as missing tokens or malformed JSON.
+- To avoid hosted inference limits, deploy the merged checkpoint to the ZeroGPU Space scaffold under `zero-gpu-space/` and set `HF_ROUTER_API` to the resulting `/v1/generate` endpoint.
+
 ### GPU / ZeroGPU Setup
 - Install optional CUDA-ready frameworks when upgrading hardware:
   ```text

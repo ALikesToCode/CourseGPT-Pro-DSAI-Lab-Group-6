@@ -1,0 +1,5 @@
+sdk: gradio
+python_version: 3.10
+app_file: app.py
+hardware: zerogpu
+sleep_time: 0

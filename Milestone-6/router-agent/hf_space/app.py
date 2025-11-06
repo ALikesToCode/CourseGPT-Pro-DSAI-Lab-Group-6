@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import importlib.util
 import re
+import requests
 
 import gradio as gr
 
@@ -78,12 +79,17 @@ except Exception:  # pragma: no cover
 
 HF_ROUTER_REPO_ENV = os.environ.get("HF_ROUTER_REPO", "")
 HF_TOKEN = os.environ.get("HF_TOKEN")
+HF_ROUTER_API = os.environ.get("HF_ROUTER_API", "").strip()
 
 RouterOption = Dict[str, Optional[str]]
 
-
-def _make_option(label: str, base: Optional[str], adapter: Optional[str] = None) -> RouterOption:
-    return {"label": label, "base": base, "adapter": adapter}
+def _make_option(
+    label: str,
+    base: Optional[str] = None,
+    adapter: Optional[str] = None,
+    api: Optional[str] = None,
+) -> RouterOption:
+    return {"label": label, "base": base, "adapter": adapter, "api": api}
 
 
 ROUTER_OPTIONS_LIST: List[RouterOption] = [
@@ -108,6 +114,11 @@ ROUTER_OPTIONS_LIST: List[RouterOption] = [
     _make_option("Qwen3 32B Base Model", "Qwen/Qwen3-32B"),
 ]
 
+if HF_ROUTER_API:
+    ROUTER_OPTIONS_LIST.append(
+        _make_option("Custom Router API (HF_ROUTER_API)", api=HF_ROUTER_API)
+    )
+
 AVAILABLE_ROUTER_OPTIONS: OrderedDict[str, RouterOption] = OrderedDict(
     (opt["label"], opt) for opt in ROUTER_OPTIONS_LIST
 )
@@ -115,7 +126,11 @@ AVAILABLE_ROUTER_OPTIONS: OrderedDict[str, RouterOption] = OrderedDict(
 
 def _match_env_to_option(env_value: str) -> Optional[str]:
     for label, option in AVAILABLE_ROUTER_OPTIONS.items():
-        if option.get("base") == env_value or option.get("adapter") == env_value:
+        if (
+            option.get("base") == env_value
+            or option.get("adapter") == env_value
+            or option.get("api") == env_value
+        ):
             return label
     return None
 
@@ -127,6 +142,9 @@ if HF_ROUTER_REPO_ENV and DEFAULT_ROUTER_LABEL == "Use sample plan (no remote mo
     AVAILABLE_ROUTER_OPTIONS[custom_label] = _make_option(custom_label, HF_ROUTER_REPO_ENV)
     DEFAULT_ROUTER_LABEL = custom_label
 
+if HF_ROUTER_API and DEFAULT_ROUTER_LABEL == "Use sample plan (no remote model)":
+    DEFAULT_ROUTER_LABEL = "Custom Router API (HF_ROUTER_API)"
+
 CLIENT_CACHE: Dict[str, Optional[Any]] = {}
 CLIENT_ERRORS: Dict[str, str] = {}
 DEFAULT_ROUTER_OPTION = AVAILABLE_ROUTER_OPTIONS[DEFAULT_ROUTER_LABEL]
@@ -135,7 +153,8 @@ DEFAULT_ROUTER_OPTION = AVAILABLE_ROUTER_OPTIONS[DEFAULT_ROUTER_LABEL]
 def _option_key(option: RouterOption) -> str:
     base = option.get("base") or ""
     adapter = option.get("adapter") or ""
-    return f"{base}||{adapter}"
+    api = option.get("api") or ""
+    return f"{base}||{adapter}||{api}"
 
 if EVAL_DIR.exists():
     BENCH_GOLD_PATH = EVAL_DIR / "benchmarks" / "router_benchmark_hard.jsonl"
@@ -150,6 +169,9 @@ SYSTEM_PROMPT = (
     "Emit ONLY strict JSON with keys route_plan, route_rationale, expected_artifacts,\n"
     "thinking_outline, handoff_plan, todo_list, difficulty, tags, acceptance_criteria, metrics."
 )
+
+THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+FENCE_RE = re.compile(r"```(?:json)?(.*?)```", re.DOTALL | re.IGNORECASE)
 
 AGENT_LOAD_LOG: List[str] = []
 
@@ -424,6 +446,8 @@ TOOL_REGEX = re.compile(r"^\s*(/[a-zA-Z0-9_-]+)")
 
 
 def get_inference_client(option: RouterOption) -> Optional[Any]:
+    if option.get("api"):
+        return None
     base_repo = option.get("base")
     if not base_repo:
         return None
@@ -446,6 +470,13 @@ def get_inference_client(option: RouterOption) -> Optional[Any]:
 
 
 def describe_router_backend(option: RouterOption) -> str:
+    api_endpoint = option.get("api") or ""
+    if api_endpoint:
+        key = _option_key(option)
+        error = CLIENT_ERRORS.get(key)
+        if error:
+            return f"Custom router API `{api_endpoint}` error: {error}"
+        return f"Using custom router API endpoint: `{api_endpoint}`"
     base_repo = option.get("base") or ""
     adapter_repo = option.get("adapter") or ""
     if not base_repo:
@@ -503,9 +534,64 @@ def extract_json_from_text(raw_text: str) -> Dict[str, Any]:
     raise ValueError("Router output contained an unterminated JSON object.")
 
 
+def _clean_router_text(text: str) -> str:
+    cleaned = THINK_BLOCK_RE.sub("", text)
+    fence_match = FENCE_RE.search(cleaned)
+    if fence_match:
+        cleaned = fence_match.group(1)
+    return cleaned.strip()
+
+
 def call_router_model(user_query: str, option: RouterOption) -> Dict[str, Any]:
+    prompt = f"{SYSTEM_PROMPT}\n\nUser query:\n{user_query.strip()}\n"
+    api_endpoint = option.get("api") or ""
     base_repo = option.get("base") or ""
     adapter_repo = option.get("adapter") or ""
+
+    if api_endpoint:
+        key = _option_key(option)
+        payload = {
+            "prompt": prompt,
+            "max_new_tokens": 900,
+            "temperature": 0.2,
+            "top_p": 0.9,
+        }
+        try:
+            response = requests.post(api_endpoint, json=payload, timeout=120)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            CLIENT_ERRORS[key] = str(exc)
+            return {
+                "error": f"Router API request failed ({exc}). Falling back to sample plan.",
+                "sample_plan": SAMPLE_PLAN,
+            }
+        try:
+            data = response.json()
+        except ValueError as exc:
+            CLIENT_ERRORS[key] = f"Invalid JSON from router API: {exc}"
+            return {
+                "error": f"Router API returned non-JSON payload ({exc}). Falling back to sample plan.",
+                "sample_plan": SAMPLE_PLAN,
+            }
+        text_output = data.get("text") or data.get("output")
+        if not isinstance(text_output, str):
+            CLIENT_ERRORS[key] = "API response missing 'text' field."
+            return {
+                "error": "Router API response missing 'text' field. Falling back to sample plan.",
+                "sample_plan": SAMPLE_PLAN,
+            }
+        cleaned_text = _clean_router_text(text_output)
+        try:
+            result = extract_json_from_text(cleaned_text)
+        except ValueError as exc:
+            CLIENT_ERRORS[key] = str(exc)
+            return {
+                "error": f"Router API output parse error ({exc}). Falling back to sample plan.",
+                "sample_plan": SAMPLE_PLAN,
+            }
+        CLIENT_ERRORS.pop(key, None)
+        return result
+
     if not base_repo:
         return SAMPLE_PLAN
     inference_client = get_inference_client(option)
@@ -515,8 +601,6 @@ def call_router_model(user_query: str, option: RouterOption) -> Dict[str, Any]:
             "error": f"Router call skipped: {error}",
             "sample_plan": SAMPLE_PLAN,
         }
-
-    prompt = f"{SYSTEM_PROMPT}\n\nUser query:\n{user_query.strip()}\n"
     try:
         generation_kwargs = {
             "max_new_tokens": 900,
@@ -530,11 +614,78 @@ def call_router_model(user_query: str, option: RouterOption) -> Dict[str, Any]:
             prompt,
             **generation_kwargs,
         )
-        return extract_json_from_text(raw)
+        if raw.lstrip().startswith("<"):
+            raise ValueError(
+                "Provider returned HTML (likely authentication or access denied). "
+                "Verify that your HF token is authorised for this checkpoint."
+            )
+        cleaned_raw = _clean_router_text(raw)
+        return extract_json_from_text(cleaned_raw)
     except Exception as exc:  # pragma: no cover
-        CLIENT_ERRORS[_option_key(option)] = f"{exc.__class__.__name__}: {exc}"
+        error_message = f"{exc.__class__.__name__}: {exc}"
+        # Some providers (e.g. Groq) expose conversational-only endpoints.
+        if "not supported for provider" in str(exc).lower() and "conversational" in str(exc).lower():
+            chat_kwargs: Dict[str, Any] = {
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_query.strip()},
+                ],
+                "max_tokens": 900,
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "response_format": {"type": "json_object"},
+            }
+            if adapter_repo:
+                chat_kwargs["extra_body"] = {"adapter_id": adapter_repo}
+            try:
+                try:
+                    chat_response = inference_client.chat_completion(**chat_kwargs)
+                except Exception as first_chat_exc:
+                    # Some providers reject adapter_id/response_format; retry without.
+                    lowered = str(first_chat_exc).lower()
+                    retried = False
+                    if "adapter_id" in lowered and "unsupported" in lowered and "extra_body" in chat_kwargs:
+                        chat_kwargs.pop("extra_body", None)
+                        retried = True
+                    if "response_format" in lowered and "unsupported" in lowered:
+                        chat_kwargs.pop("response_format", None)
+                        retried = True
+                    if retried:
+                        chat_response = inference_client.chat_completion(**chat_kwargs)
+                    else:
+                        raise first_chat_exc
+                choice = chat_response.choices[0]
+                if isinstance(choice, dict):
+                    message = choice.get("message")
+                else:
+                    message = getattr(choice, "message", None)
+                content: Any = ""
+                if isinstance(message, dict):
+                    content = message.get("content", "")
+                elif message is not None and hasattr(message, "content"):
+                    content = getattr(message, "content")
+                elif isinstance(choice, dict):
+                    content = choice.get("content", "")
+                else:
+                    content = getattr(choice, "content", "")
+                if isinstance(content, list):
+                    # Some providers return a list of content parts; join text items.
+                    content = "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in content)
+                if not isinstance(content, str):
+                    content = str(content)
+                cleaned_content = _clean_router_text(content)
+                try:
+                    return extract_json_from_text(cleaned_content)
+                except ValueError as parse_exc:
+                    snippet = cleaned_content.strip().splitlines()
+                    excerpt = " ".join(snippet[:3])[:200]
+                    raise ValueError(f"{parse_exc}; content excerpt: {excerpt}") from parse_exc
+            except Exception as chat_exc:  # pragma: no cover
+                error_message = f"{error_message}; chat fallback failed ({chat_exc.__class__.__name__}: {chat_exc})"
+
+        CLIENT_ERRORS[_option_key(option)] = error_message
         return {
-            "error": f"Router call failed ({exc.__class__.__name__}: {exc}). Falling back to sample plan.",
+            "error": f"Router call failed ({error_message}). Falling back to sample plan.",
             "sample_plan": SAMPLE_PLAN,
         }
 
