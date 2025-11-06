@@ -163,4 +163,5 @@ with gr.Blocks(title="Router Model ZeroGPU Backend") as demo:
     )
 
 
+demo.queue()
 app = gr.mount_gradio_app(fastapi_app, demo, path="/")
