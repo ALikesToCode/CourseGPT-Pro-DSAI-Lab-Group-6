@@ -32,6 +32,7 @@ MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "600"))
 DEFAULT_TEMPERATURE = float(os.environ.get("DEFAULT_TEMPERATURE", "0.2"))
 DEFAULT_TOP_P = float(os.environ.get("DEFAULT_TOP_P", "0.9"))
 USE_4BIT = os.environ.get("LOAD_IN_4BIT", "1") not in {"0", "false", "False"}
+USE_8BIT = os.environ.get("LOAD_IN_8BIT", "0").lower() in {"1", "true", "yes"}
 
 MODEL_FALLBACKS = [
     "Alovestocode/router-qwen3-32b-merged",
@@ -88,7 +89,9 @@ def get_model() -> AutoModelForCausalLM:
             "device_map": "auto",
             "trust_remote_code": True,
         }
-        if USE_4BIT:
+        if USE_8BIT:
+            kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+        elif USE_4BIT:
             kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=dtype,
