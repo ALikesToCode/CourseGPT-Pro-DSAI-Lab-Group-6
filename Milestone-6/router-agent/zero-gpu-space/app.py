@@ -198,15 +198,7 @@ app = gr.mount_gradio_app(fastapi_app, demo, path="/")
  
 
 if __name__ == "__main__":  # pragma: no cover
-    import uvicorn
-
-    base_port = int(os.environ.get("PORT", 7860))
-    for offset in range(0, 5):
-        port = base_port + offset
-        try:
-            uvicorn.run(app, host="0.0.0.0", port=port)
-            break
-        except OSError as exc:
-            if getattr(exc, "errno", None) != 98 or offset == 4:
-                raise
-            print(f"Port {port} busy, trying {port + 1} ...")
+    # Hugging Face Spaces will serve the exported `app` automatically.
+    # Running uvicorn manually can conflict with the platform proxy, so we deliberately
+    # no-op here.
+    pass
