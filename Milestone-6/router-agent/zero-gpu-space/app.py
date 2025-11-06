@@ -141,6 +141,16 @@ def healthcheck() -> dict[str, str]:
     return {"status": "ok", "model": MODEL_ID}
 
 
+@fastapi_app.on_event("startup")
+def warm_start() -> None:
+    """Ensure the GPU reservation is established during startup."""
+    try:
+        get_model()
+    except Exception as exc:
+        # Surface the failure early so the container exits with a useful log.
+        raise RuntimeError(f"Model warm-up failed: {exc}") from exc
+
+
 @fastapi_app.post("/v1/generate", response_model=GenerateResponse)
 def generate_endpoint(payload: GeneratePayload) -> GenerateResponse:
     try:
