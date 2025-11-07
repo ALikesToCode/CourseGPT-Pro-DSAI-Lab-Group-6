@@ -218,8 +218,8 @@ def _build_load_kwargs(strategy: str, gpu_compute_dtype: torch.dtype) -> Tuple[s
     raise ValueError(f"Unknown load strategy: {strategy}")
 
 
-@spaces.GPU(duration=300)
 def get_model() -> AutoModelForCausalLM:
+    """Load the model. This function should be called within a @spaces.GPU decorated function."""
     global _MODEL, ACTIVE_STRATEGY
     if _MODEL is None:
         compute_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -297,25 +297,28 @@ def healthcheck() -> dict[str, str]:
 
 @fastapi_app.on_event("startup")
 def warm_start() -> None:
-    """Ensure the GPU reservation is established during startup."""
-    if SKIP_WARM_START:
-        print("Warm start skipped (SKIP_WARM_START=1). Model loads on first request.")
-        return
-    try:
-        get_model()
-    except Exception as exc:
-        message = f"Model warm-up failed: {exc}"
-        if ALLOW_WARM_START_FAILURE:
-            print(message)
-            return
-        # Surface the failure early so the container exits with a useful log.
-        raise RuntimeError(message) from exc
+    """Warm start is disabled for ZeroGPU - model loads on first request."""
+    # ZeroGPU functions decorated with @spaces.GPU cannot be called during startup.
+    # They must be called within request handlers. Skip warm start for ZeroGPU.
+    print("Warm start skipped for ZeroGPU. Model will load on first request.")
+    return
+
+
+@spaces.GPU(duration=300)
+def _generate_with_gpu(
+    prompt: str,
+    max_new_tokens: int = MAX_NEW_TOKENS,
+    temperature: float = DEFAULT_TEMPERATURE,
+    top_p: float = DEFAULT_TOP_P,
+) -> str:
+    """Generate function wrapped with ZeroGPU decorator."""
+    return _generate(prompt, max_new_tokens, temperature, top_p)
 
 
 @fastapi_app.post("/v1/generate", response_model=GenerateResponse)
 def generate_endpoint(payload: GeneratePayload) -> GenerateResponse:
     try:
-        text = _generate(
+        text = _generate_with_gpu(
             prompt=payload.prompt,
             max_new_tokens=payload.max_new_tokens or MAX_NEW_TOKENS,
             temperature=payload.temperature or DEFAULT_TEMPERATURE,
