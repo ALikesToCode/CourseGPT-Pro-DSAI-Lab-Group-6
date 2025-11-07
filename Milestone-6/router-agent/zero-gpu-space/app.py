@@ -517,58 +517,86 @@ with gr.Blocks(
         fn=lambda: ("", ""),
         outputs=[prompt_input, output],
     )
+    
+    # Mount FastAPI routes using middleware to intercept before Gradio processes them
+    # This must be done inside the Blocks context
+    def mount_fastapi_routes():
+        """Mount FastAPI routes using middleware to ensure they're processed first."""
+        try:
+            from fastapi.responses import JSONResponse
+            from starlette.middleware.base import BaseHTTPMiddleware
+            from starlette.requests import Request
+            from starlette.responses import Response
+            
+            # Define route handlers
+            async def health_handler(request: Request) -> Response:
+                """Handle GET /health requests."""
+                return JSONResponse(content={
+                    "status": "ok",
+                    "model": MODEL_ID,
+                    "strategy": ACTIVE_STRATEGY or "pending",
+                })
+            
+            async def generate_handler(request: Request) -> Response:
+                """Handle POST /v1/generate requests."""
+                try:
+                    data = await request.json()
+                    payload = GeneratePayload(**data)
+                    text = _generate_with_gpu(
+                        prompt=payload.prompt,
+                        max_new_tokens=payload.max_new_tokens or MAX_NEW_TOKENS,
+                        temperature=payload.temperature or DEFAULT_TEMPERATURE,
+                        top_p=payload.top_p or DEFAULT_TOP_P,
+                    )
+                    return JSONResponse(content={"text": text})
+                except Exception as exc:
+                    from fastapi import HTTPException
+                    raise HTTPException(status_code=500, detail=str(exc))
+            
+            async def console_handler(request: Request) -> Response:
+                """Handle GET /console requests."""
+                return HTMLResponse(interactive_ui())
+            
+            # Create middleware to intercept routes before Gradio
+            class FastAPIRouteMiddleware(BaseHTTPMiddleware):
+                async def dispatch(self, request: Request, call_next):
+                    path = request.url.path
+                    method = request.method
+                    
+                    # Handle our custom routes
+                    if path == "/health" and method == "GET":
+                        return await health_handler(request)
+                    elif path == "/v1/generate" and method == "POST":
+                        return await generate_handler(request)
+                    elif path == "/console" and method == "GET":
+                        return await console_handler(request)
+                    
+                    # Let other requests pass through to Gradio
+                    return await call_next(request)
+            
+            # Add middleware to Gradio's app (must be added before app is built)
+            # Use add_middleware to properly register it
+            try:
+                gradio_app.app.add_middleware(FastAPIRouteMiddleware)
+                print("FastAPI routes mounted successfully via middleware")
+            except Exception as middleware_error:
+                # Fallback: try to add routes directly to router
+                print(f"Middleware approach failed: {middleware_error}, trying direct route addition...")
+                from starlette.routing import Route
+                gradio_app.app.router.routes.insert(0, Route("/health", health_handler, methods=["GET"]))
+                gradio_app.app.router.routes.insert(0, Route("/v1/generate", generate_handler, methods=["POST"]))
+                gradio_app.app.router.routes.insert(0, Route("/console", console_handler, methods=["GET"]))
+                print("FastAPI routes added directly to router")
+        except Exception as e:
+            print(f"Warning: Could not mount FastAPI routes: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Mount routes when Gradio app loads (must be inside Blocks context)
+    gradio_app.load(mount_fastapi_routes)
 
 # Enable queued execution so ZeroGPU can schedule GPU work reliably
 gradio_app.queue(max_size=8)
-
-# Mount FastAPI routes onto Gradio's underlying FastAPI app
-# This allows FastAPI endpoints to work alongside Gradio UI
-def mount_fastapi_routes():
-    """Mount FastAPI routes onto Gradio's app after initialization."""
-    try:
-        from fastapi.responses import JSONResponse
-        from starlette.routing import Route
-        
-        async def health_handler(request):
-            """Handle GET /health requests."""
-            return JSONResponse(content={
-                "status": "ok",
-                "model": MODEL_ID,
-                "strategy": ACTIVE_STRATEGY or "pending",
-            })
-        
-        async def generate_handler(request):
-            """Handle POST /v1/generate requests."""
-            try:
-                data = await request.json()
-                payload = GeneratePayload(**data)
-                text = _generate_with_gpu(
-                    prompt=payload.prompt,
-                    max_new_tokens=payload.max_new_tokens or MAX_NEW_TOKENS,
-                    temperature=payload.temperature or DEFAULT_TEMPERATURE,
-                    top_p=payload.top_p or DEFAULT_TOP_P,
-                )
-                return JSONResponse(content={"text": text})
-            except Exception as exc:
-                from fastapi import HTTPException
-                raise HTTPException(status_code=500, detail=str(exc))
-        
-        async def console_handler(request):
-            """Handle GET /console requests."""
-            return HTMLResponse(interactive_ui())
-        
-        # Add routes to Gradio's router
-        gradio_app.app.router.routes.append(Route("/health", health_handler, methods=["GET"]))
-        gradio_app.app.router.routes.append(Route("/v1/generate", generate_handler, methods=["POST"]))
-        gradio_app.app.router.routes.append(Route("/console", console_handler, methods=["GET"]))
-        print("FastAPI routes mounted successfully on Gradio app")
-    except Exception as e:
-        print(f"Warning: Could not mount FastAPI routes: {e}")
-        import traceback
-        traceback.print_exc()
-
-# Mount routes when Gradio app loads
-gradio_app.load(mount_fastapi_routes)
 
 # Set app to Gradio for Spaces compatibility (sdk: gradio requires Gradio app)
 # Spaces will handle running the server automatically
