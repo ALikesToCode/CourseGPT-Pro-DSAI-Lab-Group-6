@@ -391,42 +391,54 @@ def gradio_generate(
     """Gradio interface function with GPU decorator for ZeroGPU detection."""
     return _generate(prompt, max_new_tokens, temperature, top_p)
 
-# Create Gradio interface - this ensures ZeroGPU detects the GPU function
-gradio_interface = gr.Interface(
-    fn=gradio_generate,
-    inputs=[
-        gr.Textbox(label="Prompt", lines=5, placeholder="Enter your router prompt here..."),
-        gr.Slider(minimum=64, maximum=2048, value=MAX_NEW_TOKENS, step=16, label="Max New Tokens"),
-        gr.Slider(minimum=0.0, maximum=2.0, value=DEFAULT_TEMPERATURE, step=0.05, label="Temperature"),
-        gr.Slider(minimum=0.0, maximum=1.0, value=DEFAULT_TOP_P, step=0.05, label="Top-p"),
-    ],
-    outputs=gr.Textbox(label="Generated Response", lines=10),
-    title="Router Model API - ZeroGPU",
-    description=f"Model: {MODEL_ID} | Strategy: {ACTIVE_STRATEGY or 'pending'}",
-)
+# Create Gradio Blocks app to mount FastAPI routes properly
+with gr.Blocks(title="Router Model API - ZeroGPU") as gradio_app:
+    gr.Markdown(f"## Router Model API - ZeroGPU\n**Model:** {MODEL_ID} | **Strategy:** {ACTIVE_STRATEGY or 'pending'}")
+    
+    with gr.Row():
+        with gr.Column():
+            prompt_input = gr.Textbox(label="Prompt", lines=5, placeholder="Enter your router prompt here...")
+            max_tokens_input = gr.Slider(minimum=64, maximum=2048, value=MAX_NEW_TOKENS, step=16, label="Max New Tokens")
+            temp_input = gr.Slider(minimum=0.0, maximum=2.0, value=DEFAULT_TEMPERATURE, step=0.05, label="Temperature")
+            top_p_input = gr.Slider(minimum=0.0, maximum=1.0, value=DEFAULT_TOP_P, step=0.05, label="Top-p")
+            generate_btn = gr.Button("Generate", variant="primary")
+        
+        with gr.Column():
+            output = gr.Textbox(label="Generated Response", lines=10)
+    
+    generate_btn.click(
+        fn=gradio_generate,
+        inputs=[prompt_input, max_tokens_input, temp_input, top_p_input],
+        outputs=output,
+    )
 
-# Set app to Gradio interface for Spaces - ZeroGPU requires Gradio SDK
-# For Spaces, Gradio will handle launching and FastAPI routes can be accessed via Gradio's app
-app = gradio_interface
-
-# Mount FastAPI routes to Gradio's underlying FastAPI app
-# This happens after Gradio app is created during launch
-original_launch = gradio_interface.launch
-
-def launch_with_fastapi(*args, **kwargs):
-    """Launch Gradio and mount FastAPI routes."""
-    result = original_launch(*args, **kwargs)
+# Mount FastAPI routes to Gradio's underlying FastAPI app after Blocks context
+# Use a callback to mount routes when the app is ready
+def mount_fastapi_on_load():
+    """Mount FastAPI routes when Gradio app loads."""
     try:
-        # Mount FastAPI routes to Gradio's FastAPI app
-        gradio_app = gradio_interface.app
-        gradio_app.mount("/v1", fastapi_app)
-        gradio_app.mount("/gradio", fastapi_app)
-    except (AttributeError, Exception):
-        # Routes mounting will be handled by Spaces or on first request
-        pass
-    return result
+        # Access Gradio's FastAPI app and mount our routes
+        gradio_app.app.mount("/v1", fastapi_app)
+        gradio_app.app.mount("/gradio", fastapi_app)
+    except (AttributeError, Exception) as e:
+        print(f"Note: FastAPI routes mounting deferred: {e}")
 
-gradio_interface.launch = launch_with_fastapi
+# Try to mount immediately, and also set up for when app launches
+try:
+    mount_fastapi_on_load()
+except:
+    # If mounting fails now, it will be handled during launch
+    pass
+
+# Override launch to mount routes
+original_launch = gradio_app.launch
+def launch_with_mount(*args, **kwargs):
+    mount_fastapi_on_load()
+    return original_launch(*args, **kwargs)
+gradio_app.launch = launch_with_mount
+
+# Set app to Gradio Blocks for Spaces - ZeroGPU requires Gradio SDK
+app = gradio_app
 
 if __name__ == "__main__":  # pragma: no cover
     app.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
