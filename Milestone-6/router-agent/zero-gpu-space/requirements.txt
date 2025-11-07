@@ -10,3 +10,4 @@ accelerate
 autoawq
 timm
 compressed-tensors
+bitsandbytes
