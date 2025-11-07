@@ -61,3 +61,5 @@ python app.py
 - The app always attempts 8-bit loading first (bitsandbytes). If that fails, it falls back to bf16/fp16/fp32.
 - The UI enforces single-turn router generations; conversation history and web search are intentionally omitted to match the Milestone 6 deliverable.
 - If you need to re-enable web search or more checkpoints, extend `MODELS` and adjust the prompt builder accordingly.
+- **Benchmarking:** run `python Milestone-6/router-agent/tests/run_router_space_benchmark.py --space Alovestocode/ZeroGPU-LLM-Inference --limit 32` (requires `pip install gradio_client`) to call the Space, dump predictions, and evaluate against the Milestone 5 hard suite + thresholds.
+- Set `ROUTER_PREFETCH_MODEL` (single value) or `ROUTER_PREFETCH_MODELS=Router-Qwen3-32B-8bit,Router-Gemma3-27B-8bit` (comma-separated, `ALL` for every checkpoint) to warm-load weights during startup. Disable background warming by setting `ROUTER_WARM_REMAINING=0`.

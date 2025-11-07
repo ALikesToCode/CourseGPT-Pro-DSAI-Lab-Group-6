@@ -25,6 +25,7 @@ The scaffolding imports the Milestone 5 evaluation utilities (`schema_score`, `r
 - `docs/api_doc.md` — REST contracts for the ZeroGPU backend and Gradio `/run/predict` endpoint with sample cURL calls.
 - `docs/licenses.md` — Code/data/model licensing obligations and pending actions before going public.
 - `docs/final_project_report_outline.md` — PDF chapter plan that stitches milestones 1–6 together for submission.
+- `tests/run_router_space_benchmark.py` — CLI harness that calls the ZeroGPU Space via `gradio_client`, writes prediction JSONL files, and runs the Milestone 5 schema-score + threshold checks.
 
 Keep these Markdown files updated whenever you change router checkpoints, benchmarks, or deployment knobs so reviewers always have the latest instructions.
 
@@ -53,6 +54,18 @@ Keep these Markdown files updated whenever you change router checkpoints, benchm
   - `Alovestocode/router-qwen3-32b-merged`
   - `Alovestocode/router-llama31-merged`
   - `Alovestocode/router-gemma3-merged`
+- To benchmark a deployed Space against the Milestone 5 hard suite, run:
+  ```bash
+  pip install gradio_client  # once
+  python Milestone-6/router-agent/tests/run_router_space_benchmark.py \
+    --space Alovestocode/ZeroGPU-LLM-Inference \
+    --model Router-Qwen3-32B-8bit \
+    --limit 64 \
+    --concurrency 4
+  ```
+  The script streams router plans via the public API, emits `router_space_predictions.jsonl`, and writes a threshold report under `Milestone-6/router-agent/tests/`.
+  Use `--concurrency` to parallelise calls (each worker spins up its own `gradio_client` instance).
+- Warm-loading tips: set `ROUTER_PREFETCH_MODELS=ALL` in the ZeroGPU Space settings to download both checkpoints up front, and leave `ROUTER_WARM_REMAINING=1` (default) to continue loading unused checkpoints in the background after the first request.
 
 ### CI/CD
 - A GitHub Actions workflow (`.github/workflows/deploy-router-spaces.yml`) runs on every push touching `Milestone-6/router-agent/**`. It performs a syntax check and, when configured, publishes both Spaces automatically via `huggingface-cli upload`.
