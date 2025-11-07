@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  router-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "7860:7860"
+    environment:
+      - PORT=7860
+      - MAX_NEW_TOKENS=600
+      - DEFAULT_TEMPERATURE=0.2
+      - DEFAULT_TOP_P=0.9
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      # Mount cache directory to persist model downloads
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    # Uncomment below for GPU support (requires nvidia-docker)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    restart: unless-stopped
+
