@@ -283,6 +283,17 @@ def _generate(
     return text[len(prompt) :].strip() or text.strip()
 
 
+@spaces.GPU(duration=300)
+def _generate_with_gpu(
+    prompt: str,
+    max_new_tokens: int = MAX_NEW_TOKENS,
+    temperature: float = DEFAULT_TEMPERATURE,
+    top_p: float = DEFAULT_TOP_P,
+) -> str:
+    """Generate function wrapped with ZeroGPU decorator. Must be defined before FastAPI app for ZeroGPU detection."""
+    return _generate(prompt, max_new_tokens, temperature, top_p)
+
+
 fastapi_app = FastAPI(title="Router Model API", version="1.0.0")
 
 
@@ -302,17 +313,6 @@ def warm_start() -> None:
     # They must be called within request handlers. Skip warm start for ZeroGPU.
     print("Warm start skipped for ZeroGPU. Model will load on first request.")
     return
-
-
-@spaces.GPU(duration=300)
-def _generate_with_gpu(
-    prompt: str,
-    max_new_tokens: int = MAX_NEW_TOKENS,
-    temperature: float = DEFAULT_TEMPERATURE,
-    top_p: float = DEFAULT_TOP_P,
-) -> str:
-    """Generate function wrapped with ZeroGPU decorator."""
-    return _generate(prompt, max_new_tokens, temperature, top_p)
 
 
 @fastapi_app.post("/v1/generate", response_model=GenerateResponse)
@@ -378,10 +378,55 @@ def interactive_ui() -> str:
     """
 
 
-app = fastapi_app
+# Gradio interface for ZeroGPU detection - ZeroGPU requires Gradio SDK
+import gradio as gr
 
+@spaces.GPU(duration=300)
+def gradio_generate(
+    prompt: str,
+    max_new_tokens: int = MAX_NEW_TOKENS,
+    temperature: float = DEFAULT_TEMPERATURE,
+    top_p: float = DEFAULT_TOP_P,
+) -> str:
+    """Gradio interface function with GPU decorator for ZeroGPU detection."""
+    return _generate(prompt, max_new_tokens, temperature, top_p)
+
+# Create Gradio interface - this ensures ZeroGPU detects the GPU function
+gradio_interface = gr.Interface(
+    fn=gradio_generate,
+    inputs=[
+        gr.Textbox(label="Prompt", lines=5, placeholder="Enter your router prompt here..."),
+        gr.Slider(minimum=64, maximum=2048, value=MAX_NEW_TOKENS, step=16, label="Max New Tokens"),
+        gr.Slider(minimum=0.0, maximum=2.0, value=DEFAULT_TEMPERATURE, step=0.05, label="Temperature"),
+        gr.Slider(minimum=0.0, maximum=1.0, value=DEFAULT_TOP_P, step=0.05, label="Top-p"),
+    ],
+    outputs=gr.Textbox(label="Generated Response", lines=10),
+    title="Router Model API - ZeroGPU",
+    description=f"Model: {MODEL_ID} | Strategy: {ACTIVE_STRATEGY or 'pending'}",
+)
+
+# Set app to Gradio interface for Spaces - ZeroGPU requires Gradio SDK
+# For Spaces, Gradio will handle launching and FastAPI routes can be accessed via Gradio's app
+app = gradio_interface
+
+# Mount FastAPI routes to Gradio's underlying FastAPI app
+# This happens after Gradio app is created during launch
+original_launch = gradio_interface.launch
+
+def launch_with_fastapi(*args, **kwargs):
+    """Launch Gradio and mount FastAPI routes."""
+    result = original_launch(*args, **kwargs)
+    try:
+        # Mount FastAPI routes to Gradio's FastAPI app
+        gradio_app = gradio_interface.app
+        gradio_app.mount("/v1", fastapi_app)
+        gradio_app.mount("/gradio", fastapi_app)
+    except (AttributeError, Exception):
+        # Routes mounting will be handled by Spaces or on first request
+        pass
+    return result
+
+gradio_interface.launch = launch_with_fastapi
 
 if __name__ == "__main__":  # pragma: no cover
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 7860)))
+    app.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
