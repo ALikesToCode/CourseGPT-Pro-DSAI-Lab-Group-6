@@ -18,6 +18,16 @@
 
 The scaffolding imports the Milestone 5 evaluation utilities (`schema_score`, `router_benchmark_runner`) so we can keep a single source of truth for metrics and thresholds.
 
+## Milestone 6 deliverables cheat sheet
+- `docs/overview.md` — Problem statement, architecture snapshot, and component table routed to this milestone.
+- `docs/technical_doc.md` — Environment setup, data/model/training/eval summaries, inference pipeline, deployment procedures, and reproducibility checklist.
+- `docs/user_guide.md` — Non-technical walkthrough for the Gradio UI plus troubleshooting tips.
+- `docs/api_doc.md` — REST contracts for the ZeroGPU backend and Gradio `/run/predict` endpoint with sample cURL calls.
+- `docs/licenses.md` — Code/data/model licensing obligations and pending actions before going public.
+- `docs/final_project_report_outline.md` — PDF chapter plan that stitches milestones 1–6 together for submission.
+
+Keep these Markdown files updated whenever you change router checkpoints, benchmarks, or deployment knobs so reviewers always have the latest instructions.
+
 ## Environment Variables
 - `HF_ROUTER_REPO` / `HF_TOKEN` — Hugging Face inference endpoint for the router adapter or full base model (optional; falls back to sample plan).
   - The Space UI now exposes a selector with the following built-in choices:

@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 
 import torch
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 try:
@@ -297,7 +297,13 @@ def _generate_with_gpu(
 fastapi_app = FastAPI(title="Router Model API", version="1.0.0")
 
 
-@fastapi_app.get("/")
+@fastapi_app.get("/", response_class=RedirectResponse)
+def root_redirect() -> RedirectResponse:
+    """Redirect root traffic to the Gradio UI for a cleaner Spaces landing."""
+    return RedirectResponse(url="/gradio", status_code=307)
+
+
+@fastapi_app.get("/health")
 def healthcheck() -> dict[str, str]:
     return {
         "status": "ok",
@@ -329,7 +335,7 @@ def generate_endpoint(payload: GeneratePayload) -> GenerateResponse:
     return GenerateResponse(text=text)
 
 
-@fastapi_app.get("/gradio", response_class=HTMLResponse)
+@fastapi_app.get("/console", response_class=HTMLResponse)
 def interactive_ui() -> str:
     return """
     <!doctype html>
@@ -392,53 +398,182 @@ def gradio_generate(
     return _generate(prompt, max_new_tokens, temperature, top_p)
 
 # Create Gradio Blocks app to mount FastAPI routes properly
-with gr.Blocks(title="Router Model API - ZeroGPU") as gradio_app:
-    gr.Markdown(f"## Router Model API - ZeroGPU\n**Model:** {MODEL_ID} | **Strategy:** {ACTIVE_STRATEGY or 'pending'}")
+with gr.Blocks(
+    title="Router Model API - ZeroGPU",
+    theme=gr.themes.Soft(),
+    css="""
+    .gradio-container {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .main-header {
+        text-align: center;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    .info-box {
+        background: #f0f0f0;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+    """
+) as gradio_app:
+    gr.HTML("""
+    <div class="main-header">
+        <h1>🚀 Router Model API - ZeroGPU</h1>
+        <p>Intelligent routing agent for coordinating specialized AI agents</p>
+    </div>
+    """)
     
     with gr.Row():
-        with gr.Column():
-            prompt_input = gr.Textbox(label="Prompt", lines=5, placeholder="Enter your router prompt here...")
-            max_tokens_input = gr.Slider(minimum=64, maximum=2048, value=MAX_NEW_TOKENS, step=16, label="Max New Tokens")
-            temp_input = gr.Slider(minimum=0.0, maximum=2.0, value=DEFAULT_TEMPERATURE, step=0.05, label="Temperature")
-            top_p_input = gr.Slider(minimum=0.0, maximum=1.0, value=DEFAULT_TOP_P, step=0.05, label="Top-p")
-            generate_btn = gr.Button("Generate", variant="primary")
+        with gr.Column(scale=1):
+            gr.Markdown("### ⚙️ Configuration")
+            with gr.Accordion("Model Information", open=False):
+                gr.Markdown(f"""
+                **Model:** `{MODEL_ID}`  
+                **Strategy:** `{ACTIVE_STRATEGY or 'pending'}`  
+                **Max Tokens:** `{MAX_NEW_TOKENS}`  
+                **Default Temperature:** `{DEFAULT_TEMPERATURE}`  
+                **Default Top-p:** `{DEFAULT_TOP_P}`
+                """)
+            
+            gr.Markdown("### 📝 Input")
+            prompt_input = gr.Textbox(
+                label="Router Prompt",
+                lines=8,
+                placeholder="Enter your router prompt here...\n\nExample:\nYou are the Router Agent coordinating Math, Code, and General-Search specialists.\nUser query: Solve the integral of x^2 from 0 to 1",
+                value="",
+            )
+            
+            with gr.Accordion("⚙️ Generation Parameters", open=True):
+                max_tokens_input = gr.Slider(
+                    minimum=64,
+                    maximum=2048,
+                    value=MAX_NEW_TOKENS,
+                    step=16,
+                    label="Max New Tokens",
+                    info="Maximum number of tokens to generate"
+                )
+                temp_input = gr.Slider(
+                    minimum=0.0,
+                    maximum=2.0,
+                    value=DEFAULT_TEMPERATURE,
+                    step=0.05,
+                    label="Temperature",
+                    info="Controls randomness: lower = more deterministic"
+                )
+                top_p_input = gr.Slider(
+                    minimum=0.0,
+                    maximum=1.0,
+                    value=DEFAULT_TOP_P,
+                    step=0.05,
+                    label="Top-p (Nucleus Sampling)",
+                    info="Probability mass to consider for sampling"
+                )
+            
+            with gr.Row():
+                generate_btn = gr.Button("🚀 Generate", variant="primary", scale=2)
+                clear_btn = gr.Button("🗑️ Clear", variant="secondary", scale=1)
         
-        with gr.Column():
-            output = gr.Textbox(label="Generated Response", lines=10)
+        with gr.Column(scale=1):
+            gr.Markdown("### 📤 Output")
+            output = gr.Textbox(
+                label="Generated Response",
+                lines=20,
+                placeholder="Generated response will appear here...",
+                show_copy_button=True,
+            )
+            
+            with gr.Accordion("📚 API Information", open=False):
+                gr.Markdown("""
+                ### API Endpoints
+                
+                **POST** `/v1/generate`
+                ```json
+                {
+                  "prompt": "Your prompt here",
+                  "max_new_tokens": 600,
+                  "temperature": 0.2,
+                  "top_p": 0.9
+                }
+                ```
+                
+                **GET** `/health` - JSON health check  
+                **GET** `/gradio` - Full Gradio UI  
+                **GET** `/console` - Minimal HTML console
+                """)
     
+    # Event handlers
     generate_btn.click(
         fn=gradio_generate,
         inputs=[prompt_input, max_tokens_input, temp_input, top_p_input],
         outputs=output,
     )
 
-# Mount FastAPI routes to Gradio's underlying FastAPI app after Blocks context
-# Use a callback to mount routes when the app is ready
-def mount_fastapi_on_load():
-    """Mount FastAPI routes when Gradio app loads."""
+    clear_btn.click(
+        fn=lambda: ("", ""),
+        outputs=[prompt_input, output],
+    )
+
+# Enable queued execution so ZeroGPU can schedule GPU work reliably
+gradio_app.queue(max_size=8)
+
+# Mount FastAPI routes onto Gradio's underlying FastAPI app
+# This allows FastAPI endpoints to work alongside Gradio UI
+def mount_fastapi_routes():
+    """Mount FastAPI routes onto Gradio's app after initialization."""
     try:
-        # Access Gradio's FastAPI app and mount our routes
-        gradio_app.app.mount("/v1", fastapi_app)
-        gradio_app.app.mount("/gradio", fastapi_app)
-    except (AttributeError, Exception) as e:
-        print(f"Note: FastAPI routes mounting deferred: {e}")
+        from fastapi.responses import JSONResponse
+        from starlette.routing import Route
+        
+        async def health_handler(request):
+            """Handle GET /health requests."""
+            return JSONResponse(content={
+                "status": "ok",
+                "model": MODEL_ID,
+                "strategy": ACTIVE_STRATEGY or "pending",
+            })
+        
+        async def generate_handler(request):
+            """Handle POST /v1/generate requests."""
+            try:
+                data = await request.json()
+                payload = GeneratePayload(**data)
+                text = _generate_with_gpu(
+                    prompt=payload.prompt,
+                    max_new_tokens=payload.max_new_tokens or MAX_NEW_TOKENS,
+                    temperature=payload.temperature or DEFAULT_TEMPERATURE,
+                    top_p=payload.top_p or DEFAULT_TOP_P,
+                )
+                return JSONResponse(content={"text": text})
+            except Exception as exc:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=500, detail=str(exc))
+        
+        async def console_handler(request):
+            """Handle GET /console requests."""
+            return HTMLResponse(interactive_ui())
+        
+        # Add routes to Gradio's router
+        gradio_app.app.router.routes.append(Route("/health", health_handler, methods=["GET"]))
+        gradio_app.app.router.routes.append(Route("/v1/generate", generate_handler, methods=["POST"]))
+        gradio_app.app.router.routes.append(Route("/console", console_handler, methods=["GET"]))
+        print("FastAPI routes mounted successfully on Gradio app")
+    except Exception as e:
+        print(f"Warning: Could not mount FastAPI routes: {e}")
+        import traceback
+        traceback.print_exc()
 
-# Try to mount immediately, and also set up for when app launches
-try:
-    mount_fastapi_on_load()
-except:
-    # If mounting fails now, it will be handled during launch
-    pass
+# Mount routes when Gradio app loads
+gradio_app.load(mount_fastapi_routes)
 
-# Override launch to mount routes
-original_launch = gradio_app.launch
-def launch_with_mount(*args, **kwargs):
-    mount_fastapi_on_load()
-    return original_launch(*args, **kwargs)
-gradio_app.launch = launch_with_mount
-
-# Set app to Gradio Blocks for Spaces - ZeroGPU requires Gradio SDK
+# Set app to Gradio for Spaces compatibility (sdk: gradio requires Gradio app)
+# Spaces will handle running the server automatically
 app = gradio_app
 
 if __name__ == "__main__":  # pragma: no cover
+    # For local testing only - Spaces handles server startup
     app.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))

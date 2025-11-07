@@ -20,7 +20,7 @@ endpoint via the `HF_ROUTER_API` environment variable.
 
 | File | Purpose |
 | ---- | ------- |
-| `app.py` | Loads the merged checkpoint on demand (tries `MODEL_REPO` first, then `MODEL_FALLBACKS` or the default Gemma → Llama → Qwen order), exposes a `/v1/generate` API, and serves a small HTML console at `/gradio`. |
+| `app.py` | Loads the merged checkpoint on demand (tries `MODEL_REPO` first, then `MODEL_FALLBACKS` or the default Gemma → Llama → Qwen order), exposes a `/v1/generate` API, mounts the Gradio UI at `/gradio`, and keeps a lightweight HTML console at `/console`. |
 | `requirements.txt` | Minimal dependency set (transformers, bitsandbytes, torch, fastapi, accelerate, sentencepiece, spaces, uvicorn). |
 | `.huggingface/spaces.yml` | Configures the Space for ZeroGPU hardware and disables automatic sleep. |
 
@@ -75,4 +75,6 @@ that the deployed model returns the expected JSON plan. When running on ZeroGPU
 we recommend keeping `MODEL_LOAD_STRATEGY=8bit` (or `LOAD_IN_8BIT=1`) so the
 weights fit comfortably in the 70GB slice; if that fails the app automatically
 degrades through 4-bit, bf16/fp16, and finally CPU mode. You can inspect the
-active load mode via the `/` healthcheck (`strategy` field).
+active load mode via the `/health` endpoint (`strategy` field). The root path
+(`/`) now redirects to the Gradio UI, while `/console` serves the minimal HTML
+form for quick manual testing.
