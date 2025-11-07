@@ -5,7 +5,8 @@ from functools import lru_cache
 from typing import List, Optional, Tuple
 
 import torch
-from fastapi import APIRouter, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 try:
@@ -294,6 +295,7 @@ def _generate_with_gpu(
 
 
 def healthcheck() -> dict[str, str]:
+    """Health check endpoint handler."""
     return {
         "status": "ok",
         "model": MODEL_ID,
@@ -307,6 +309,7 @@ def warm_start() -> None:
 
 
 def generate_endpoint(payload: GeneratePayload) -> GenerateResponse:
+    """Generate endpoint handler."""
     try:
         text = _generate_with_gpu(
             prompt=payload.prompt,
@@ -480,24 +483,52 @@ with gr.Blocks(
         fn=lambda: ("", "", STATUS_IDLE),
         outputs=[prompt_input, output, status_display],
     )
-    
-    # Note: API routes will be added after Blocks context to avoid interfering with Gradio's static assets
 
-# Attach API routes directly onto Gradio's FastAPI instance
-api_router = APIRouter()
+# Add API routes directly to Gradio's FastAPI app
+# Use Starlette Route to insert at beginning, ensuring they're checked before Gradio's routes
+# Use JSONResponse explicitly to ensure proper Content-Length calculation
+from starlette.routing import Route
 
+async def health_handler(request):
+    """
+    Health check handler - returns JSON with proper Content-Length.
+    Never returns 204/304 - always returns 200 with JSON body.
+    """
+    result = healthcheck()
+    if not result:
+        result = {"status": "ok"}
+    # Use JSONResponse to ensure proper Content-Length header
+    return JSONResponse(content=result)
 
-@api_router.get("/health")
-def api_health() -> dict[str, str]:
-    return healthcheck()
+async def generate_handler(request):
+    """
+    Generate handler - returns JSON with proper Content-Length.
+    Never returns 204/304 - always returns 200 with JSON body or 500 error.
+    """
+    try:
+        data = await request.json()
+        payload = GeneratePayload(**data)
+        result = generate_endpoint(payload)
+        # Use JSONResponse to ensure proper Content-Length header
+        return JSONResponse(content={"text": result.text})
+    except HTTPException as exc:
+        # Return JSONResponse for errors to ensure proper Content-Length
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail}
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(exc)}
+        )
 
+# Insert routes at the beginning to ensure they're checked before Gradio's routes
+# This prevents Gradio's middleware from interfering with Content-Length
+gradio_app.app.router.routes.insert(0, Route("/health", health_handler, methods=["GET"]))
+gradio_app.app.router.routes.insert(0, Route("/v1/generate", generate_handler, methods=["POST"]))
 
-@api_router.post("/v1/generate", response_model=GenerateResponse)
-def api_generate(payload: GeneratePayload) -> GenerateResponse:
-    return generate_endpoint(payload)
-
-
-gradio_app.app.include_router(api_router)
+# Call warm start
 warm_start()
 
 # Enable queued execution so ZeroGPU can schedule GPU work reliably
