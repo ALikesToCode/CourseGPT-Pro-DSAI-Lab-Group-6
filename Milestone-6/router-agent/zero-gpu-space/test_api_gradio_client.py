@@ -59,7 +59,7 @@ def test_api():
         'extra_guidance': '',
         'difficulty': 'intermediate',
         'tags': 'math, python',
-        'model_choice': 'Router-Qwen3-32B-8bit',
+        'model_choice': 'Router-Qwen3-32B-AWQ',
         'max_new_tokens': 512,  # Smaller for quick test
         'temperature': 0.2,
         'top_p': 0.9
@@ -186,7 +186,7 @@ if __name__ == "__main__":
         print(f"  client = Client('{API_URL}')")
         print("  result = client.predict(")
         print("      'user_task', '', 'acceptance', '', 'intermediate', 'tags',")
-        print("      'Router-Qwen3-32B-8bit', 512, 0.2, 0.9,")
+        print("      'Router-Qwen3-32B-AWQ', 512, 0.2, 0.9,")
         print("      api_name='//generate_router_plan_streaming'")
         print("  )")
     else:

@@ -8,8 +8,56 @@ from typing import Any, Dict, List, Tuple
 import gradio as gr
 import spaces
 import torch
-from transformers import AutoTokenizer, BitsAndBytesConfig, TextIteratorStreamer, pipeline
+from transformers import AutoTokenizer, TextIteratorStreamer, pipeline
 from threading import Thread
+
+# Enable optimizations
+torch.backends.cuda.matmul.allow_tf32 = True
+
+# Try to import vLLM (primary inference engine)
+try:
+    from vllm import LLM, SamplingParams
+    from vllm.engine.arg_utils import AsyncEngineArgs
+    VLLM_AVAILABLE = True
+except ImportError:
+    VLLM_AVAILABLE = False
+    LLM = None
+    SamplingParams = None
+    print("Warning: vLLM not available, falling back to Transformers")
+
+# Try to import LLM Compressor (for quantization)
+try:
+    from llmcompressor import oneshot
+    from llmcompressor.modifiers.quantization import AWQModifier
+    LLM_COMPRESSOR_AVAILABLE = True
+except ImportError:
+    LLM_COMPRESSOR_AVAILABLE = False
+    print("Warning: LLM Compressor not available (models should be pre-quantized)")
+
+# Try to import AWQ, fallback to BitsAndBytes if not available
+try:
+    from awq import AutoAWQForCausalLM
+    AWQ_AVAILABLE = True
+except ImportError:
+    AWQ_AVAILABLE = False
+    print("Warning: AutoAWQ not available, falling back to BitsAndBytes")
+
+# Always import BitsAndBytesConfig for fallback
+try:
+    from transformers import BitsAndBytesConfig
+    BITSANDBYTES_AVAILABLE = True
+except ImportError:
+    BITSANDBYTES_AVAILABLE = False
+    BitsAndBytesConfig = None
+    print("Warning: BitsAndBytes not available")
+
+# Try to import FlashAttention-2
+try:
+    import flash_attn
+    FLASH_ATTN_AVAILABLE = True
+except ImportError:
+    FLASH_ATTN_AVAILABLE = False
+    print("Warning: FlashAttention-2 not available")
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
 if not HF_TOKEN:
@@ -21,15 +69,17 @@ STOP_SEQUENCES = [PLAN_END_TOKEN, "</json>", "</JSON>"]
 ROUTER_SYSTEM_PROMPT = """You are the Router Agent coordinating Math, Code, and General-Search specialists.\nEmit EXACTLY ONE strict JSON object with keys route_plan, route_rationale, expected_artifacts,\nthinking_outline, handoff_plan, todo_list, difficulty, tags, acceptance_criteria, metrics.\nRules:\n- No markdown/code fences, no natural-language prologues or epilogues.\n- route_plan must be an ordered list of tool invocations such as /math(...), /code(...), /general-search(...).\n- todo_list must map each checklist item to the responsible tool.\n- metrics must include primary and secondary arrays (add optional *_guidance fields when they exist).\n- After the closing brace of the JSON object, immediately append the sentinel <|end_of_plan|>.\nExample output:\n{\n  "route_plan": ["/general-search(...)"],\n  "route_rationale": "...",\n  ...\n}<|end_of_plan|>\nReturn nothing else."""
 
 MODELS = {
-    "Router-Qwen3-32B-8bit": {
+    "Router-Qwen3-32B-AWQ": {
         "repo_id": "Alovestocode/router-qwen3-32b-merged",
-        "description": "Router checkpoint on Qwen3 32B merged and quantized for 8-bit ZeroGPU inference.",
+        "description": "Router checkpoint on Qwen3 32B merged, optimized with AWQ quantization via vLLM.",
         "params_b": 32.0,
+        "quantization": "awq",  # vLLM will auto-detect AWQ
     },
-    "Router-Gemma3-27B-8bit": {
+    "Router-Gemma3-27B-AWQ": {
         "repo_id": "Alovestocode/router-gemma3-merged",
-        "description": "Router checkpoint on Gemma3 27B merged and quantized for 8-bit ZeroGPU inference.",
+        "description": "Router checkpoint on Gemma3 27B merged, optimized with AWQ quantization via vLLM.",
         "params_b": 27.0,
+        "quantization": "awq",  # vLLM will auto-detect AWQ
     },
 }
 
@@ -46,7 +96,8 @@ REQUIRED_KEYS = [
     "metrics",
 ]
 
-PIPELINES: Dict[str, Any] = {}
+PIPELINES: Dict[str, Any] = {}  # For Transformers fallback
+VLLM_MODELS: Dict[str, Any] = {}  # For vLLM models
 TOKENIZER_CACHE: Dict[str, Any] = {}
 WARMED_REMAINING = False
 TOOL_PATTERN = re.compile(r"^/[a-z0-9_-]+\(.*\)$", re.IGNORECASE)
@@ -56,7 +107,12 @@ def get_tokenizer(repo: str):
     tok = TOKENIZER_CACHE.get(repo)
     if tok is not None:
         return tok
-    tok = AutoTokenizer.from_pretrained(repo, token=HF_TOKEN)
+    tok = AutoTokenizer.from_pretrained(
+        repo, 
+        token=HF_TOKEN,
+        use_fast=True,
+        trust_remote_code=True
+    )
     tok.padding_side = "left"
     tok.truncation_side = "left"
     if tok.pad_token_id is None and tok.eos_token_id is not None:
@@ -65,34 +121,155 @@ def get_tokenizer(repo: str):
     return tok
 
 
+def load_vllm_model(model_name: str):
+    """Load model with vLLM (supports AWQ natively, continuous batching, PagedAttention)."""
+    if model_name in VLLM_MODELS:
+        return VLLM_MODELS[model_name]
+    
+    repo = MODELS[model_name]["repo_id"]
+    model_config = MODELS[model_name]
+    quantization = model_config.get("quantization", None)
+    
+    print(f"Loading {repo} with vLLM (quantization: {quantization})...")
+    
+    try:
+        # vLLM configuration optimized for ZeroGPU H200 slice
+        llm_kwargs = {
+            "model": repo,
+            "trust_remote_code": True,
+            "token": HF_TOKEN,
+            "dtype": "bfloat16",  # Prefer bf16 over int8 for speed
+            "gpu_memory_utilization": 0.90,  # Leave headroom for KV cache
+            "max_model_len": 16384,  # Adjust based on GPU memory
+            "enable_chunked_prefill": True,  # Better for long prompts
+            "tensor_parallel_size": 1,  # Single GPU for ZeroGPU
+            "max_num_seqs": 256,  # Continuous batching capacity
+            "enable_prefix_caching": True,  # Cache prompts for faster TTFT
+        }
+        
+        # Add quantization if specified (vLLM auto-detects AWQ)
+        if quantization == "awq":
+            llm_kwargs["quantization"] = "awq"
+            # vLLM will auto-detect AWQ weights if present
+        
+        llm = LLM(**llm_kwargs)
+        VLLM_MODELS[model_name] = llm
+        print(f"✅ vLLM model loaded: {model_name} (continuous batching enabled)")
+        return llm
+    except Exception as exc:
+        print(f"❌ vLLM load failed for {repo}: {exc}")
+        raise
+
+
+def load_awq_pipeline(repo: str, tokenizer):
+    """Load AWQ-quantized model with FlashAttention-2 and torch.compile (Transformers fallback)."""
+    model = AutoAWQForCausalLM.from_quantized(
+        repo,
+        fuse_layers=True,
+        trust_remote_code=True,
+        device_map="auto",
+        token=HF_TOKEN,
+    )
+    
+    # Prepare model kwargs with FlashAttention-2 if available
+    model_kwargs = {}
+    if FLASH_ATTN_AVAILABLE:
+        model_kwargs["attn_implementation"] = "flash_attention_2"
+    
+    pipe = pipeline(
+        task="text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        trust_remote_code=True,
+        device_map="auto",
+        model_kwargs=model_kwargs,
+        use_cache=True,
+        torch_dtype=torch.bfloat16,  # Prefer bf16 over int8 for speed
+    )
+    pipe.model.eval()
+    
+    # Apply torch.compile for kernel fusion (~10-20% speedup after first call)
+    try:
+        if hasattr(torch, 'compile'):
+            print("Applying torch.compile for kernel fusion...")
+            pipe.model = torch.compile(pipe.model, mode="reduce-overhead")
+            print("✅ torch.compile applied (first call will be slower, subsequent calls faster)")
+    except Exception as exc:
+        print(f"⚠️ torch.compile failed: {exc} (continuing without compilation)")
+    
+    return pipe
+
+
 def load_pipeline(model_name: str):
+    """Load model with vLLM (preferred) or Transformers (fallback)."""
+    # Try vLLM first (best performance with AWQ support)
+    if VLLM_AVAILABLE:
+        try:
+            return load_vllm_model(model_name)
+        except Exception as exc:
+            print(f"vLLM load failed, falling back to Transformers: {exc}")
+    
+    # Fallback to Transformers pipeline
     if model_name in PIPELINES:
         return PIPELINES[model_name]
 
     repo = MODELS[model_name]["repo_id"]
     tokenizer = get_tokenizer(repo)
 
-    try:
-        quant_config = BitsAndBytesConfig(load_in_8bit=True)
-        pipe = pipeline(
-            task="text-generation",
-            model=repo,
-            tokenizer=tokenizer,
-            trust_remote_code=True,
-            device_map="auto",
-            model_kwargs={"quantization_config": quant_config},
-            use_cache=True,
-            token=HF_TOKEN,
-        )
-        pipe.model.eval()
-        PIPELINES[model_name] = pipe
-        _schedule_background_warm(model_name)
-        return pipe
-    except Exception as exc:
-        print(f"8-bit load failed for {repo}: {exc}. Falling back to higher precision.")
+    # Try AWQ first if available
+    if AWQ_AVAILABLE:
+        try:
+            print(f"Loading {repo} with AWQ quantization...")
+            pipe = load_awq_pipeline(repo, tokenizer)
+            PIPELINES[model_name] = pipe
+            _schedule_background_warm(model_name)
+            # Warm kernels immediately after loading
+            Thread(target=lambda: _warm_kernels(model_name), daemon=True).start()
+            return pipe
+        except Exception as exc:
+            print(f"AWQ load failed for {repo}: {exc}. Falling back to BitsAndBytes.")
 
+    # Fallback to BitsAndBytes 8-bit
+    if BITSANDBYTES_AVAILABLE:
+        try:
+            quant_config = BitsAndBytesConfig(load_in_8bit=True)
+            model_kwargs = {"quantization_config": quant_config}
+            if FLASH_ATTN_AVAILABLE:
+                model_kwargs["attn_implementation"] = "flash_attention_2"
+            
+            pipe = pipeline(
+                task="text-generation",
+                model=repo,
+                tokenizer=tokenizer,
+                trust_remote_code=True,
+                device_map="auto",
+                model_kwargs=model_kwargs,
+                use_cache=True,
+                token=HF_TOKEN,
+                torch_dtype=torch.bfloat16,
+            )
+            pipe.model.eval()
+            
+            # Apply torch.compile for kernel fusion (~10-20% speedup after first call)
+            try:
+                if hasattr(torch, 'compile'):
+                    pipe.model = torch.compile(pipe.model, mode="reduce-overhead")
+            except Exception:
+                pass
+            
+            PIPELINES[model_name] = pipe
+            _schedule_background_warm(model_name)
+            return pipe
+        except Exception as exc:
+            print(f"8-bit load failed for {repo}: {exc}. Falling back to higher precision.")
+
+    # Fallback to bfloat16/fp16/fp32
     for dtype in (torch.bfloat16, torch.float16, torch.float32):
         try:
+            model_kwargs = {}
+            if FLASH_ATTN_AVAILABLE:
+                model_kwargs["attn_implementation"] = "flash_attention_2"
+            
             pipe = pipeline(
                 task="text-generation",
                 model=repo,
@@ -100,29 +277,91 @@ def load_pipeline(model_name: str):
                 trust_remote_code=True,
                 device_map="auto",
                 dtype=dtype,
+                model_kwargs=model_kwargs,
                 use_cache=True,
                 token=HF_TOKEN,
             )
             pipe.model.eval()
+            
+            # Apply torch.compile for kernel fusion
+            try:
+                if hasattr(torch, 'compile'):
+                    pipe.model = torch.compile(pipe.model, mode="reduce-overhead")
+            except Exception:
+                pass
+            
             PIPELINES[model_name] = pipe
             _schedule_background_warm(model_name)
             return pipe
         except Exception:
             continue
 
+    # Final fallback
+    model_kwargs = {}
+    if FLASH_ATTN_AVAILABLE:
+        model_kwargs["attn_implementation"] = "flash_attention_2"
+    
     pipe = pipeline(
         task="text-generation",
         model=repo,
         tokenizer=tokenizer,
         trust_remote_code=True,
         device_map="auto",
+        model_kwargs=model_kwargs,
         use_cache=True,
         token=HF_TOKEN,
     )
     pipe.model.eval()
+    
+    # Apply torch.compile for kernel fusion
+    try:
+        if hasattr(torch, 'compile'):
+            pipe.model = torch.compile(pipe.model, mode="reduce-overhead")
+    except Exception:
+        pass
+    
     PIPELINES[model_name] = pipe
     _schedule_background_warm(model_name)
     return pipe
+
+
+def _warm_kernels(model_name: str) -> None:
+    """Warm up CUDA kernels with a small dummy generation."""
+    try:
+        # Check if using vLLM
+        if VLLM_AVAILABLE and model_name in VLLM_MODELS:
+            llm = VLLM_MODELS[model_name]
+            # vLLM handles warmup internally, but we can trigger a small generation
+            sampling_params = SamplingParams(temperature=0.0, max_tokens=2)
+            _ = llm.generate("test", sampling_params)
+            print(f"vLLM kernels warmed for {model_name}")
+            return
+        
+        # Transformers pipeline warmup
+        pipe = PIPELINES.get(model_name)
+        if pipe is None:
+            return
+        
+        tokenizer = pipe.tokenizer
+        # Create a minimal prompt for warmup
+        warmup_text = "test"
+        inputs = tokenizer(warmup_text, return_tensors="pt")
+        if hasattr(pipe.model, 'device'):
+            inputs = {k: v.to(pipe.model.device) for k, v in inputs.items()}
+        elif torch.cuda.is_available():
+            inputs = {k: v.cuda() for k, v in inputs.items()}
+        
+        # Run a tiny generation to JIT-fuse kernels
+        with torch.inference_mode():
+            _ = pipe.model.generate(
+                **inputs,
+                max_new_tokens=2,
+                do_sample=False,
+                use_cache=True,
+            )
+        print(f"Transformers kernels warmed for {model_name}")
+    except Exception as exc:
+        print(f"Kernel warmup failed for {model_name}: {exc}")
 
 
 def _schedule_background_warm(loaded_model: str) -> None:
@@ -133,7 +372,9 @@ def _schedule_background_warm(loaded_model: str) -> None:
     if warm_remaining not in {"1", "true", "True"}:
         return
 
-    remaining = [name for name in MODELS if name not in PIPELINES]
+    # Check both PIPELINES and VLLM_MODELS for remaining models
+    loaded_models = set(PIPELINES.keys()) | set(VLLM_MODELS.keys())
+    remaining = [name for name in MODELS if name not in loaded_models]
     if not remaining:
         WARMED_REMAINING = True
         return
@@ -143,6 +384,8 @@ def _schedule_background_warm(loaded_model: str) -> None:
             try:
                 print(f"Background warm start for {name}")
                 load_pipeline(name)
+                # Warm kernels after loading
+                _warm_kernels(name)
             except Exception as exc:  # pragma: no cover
                 print(f"Warm start failed for {name}: {exc}")
         WARMED_REMAINING = True
@@ -201,6 +444,18 @@ def extract_json_from_text(text: str) -> str:
     raise ValueError("Router output JSON appears truncated.")
 
 
+def trim_at_stop_sequences(text: str) -> Tuple[str, bool]:
+    """Trim text at stop sequences and return trimmed text and whether a stop was found."""
+    earliest = None
+    for stop in STOP_SEQUENCES:
+        idx = text.find(stop)
+        if idx != -1 and (earliest is None or idx < earliest):
+            earliest = idx
+    if earliest is not None:
+        return text[:earliest], True
+    return text, False
+
+
 def is_function_call(text: str) -> bool:
     return bool(TOOL_PATTERN.match(text.strip()))
 
@@ -257,8 +512,7 @@ def format_validation_message(ok: bool, issues: List[str]) -> str:
     return f"❌ Issues detected:\n{bullets}"
 
 
-@spaces.GPU(duration=600)
-def generate_router_plan_streaming(
+def _generate_router_plan_streaming_internal(
     user_task: str,
     context: str,
     acceptance: str,
@@ -269,8 +523,9 @@ def generate_router_plan_streaming(
     max_new_tokens: int,
     temperature: float,
     top_p: float,
+    gpu_duration: int,
 ):
-    """Generator function for streaming token output."""
+    """Internal generator function for streaming token output."""
     if not user_task.strip():
         yield "", {}, "❌ User task is required.", ""
         return
@@ -291,71 +546,135 @@ def generate_router_plan_streaming(
 
         generator = load_pipeline(model_choice)
         
-        # Get the underlying model and tokenizer
-        model = generator.model
-        tokenizer = generator.tokenizer
+        # Check if using vLLM or Transformers
+        is_vllm = VLLM_AVAILABLE and isinstance(generator, LLM)
         
-        # Set up streaming
-        streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
-        
-        # Prepare inputs
-        inputs = tokenizer(prompt, return_tensors="pt")
-        if hasattr(model, 'device'):
-            inputs = {k: v.to(model.device) for k, v in inputs.items()}
-        elif torch.cuda.is_available():
-            inputs = {k: v.cuda() for k, v in inputs.items()}
-        
-        # Start generation in a separate thread
-        generation_kwargs = {
-            **inputs,
-            "max_new_tokens": max_new_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
-            "do_sample": True,
-            "streamer": streamer,
-            "eos_token_id": tokenizer.eos_token_id,
-            "pad_token_id": tokenizer.pad_token_id or tokenizer.eos_token_id,
-        }
+        if is_vllm:
+            # Use vLLM streaming API with continuous batching
+            sampling_params = SamplingParams(
+                temperature=temperature,
+                top_p=top_p,
+                max_tokens=max_new_tokens,
+                stop=STOP_SEQUENCES,
+            )
+            
+            # vLLM streaming generation (non-blocking, continuous batching)
+            completion = ""
+            parsed_plan: Dict[str, Any] | None = None
+            validation_msg = "🔄 Generating..."
+            
+            # vLLM's generate with stream=True returns RequestOutput iterator
+            # Each RequestOutput contains incremental text updates
+            stream = generator.generate(prompt, sampling_params, stream=True)
+            
+            prev_text_len = 0
+            for request_output in stream:
+                if not request_output.outputs:
+                    continue
+                
+                # Get the latest output (vLLM provides incremental updates)
+                output = request_output.outputs[0]
+                current_text = output.text
+                
+                # Extract only new tokens since last update
+                if len(current_text) > prev_text_len:
+                    new_text = current_text[prev_text_len:]
+                    completion += new_text
+                    prev_text_len = len(current_text)
+                    
+                    chunk = completion
+                    finished = False
+                    display_plan = parsed_plan or {}
 
-        def _generate():
-            with torch.inference_mode():
-                model.generate(**generation_kwargs)
+                    chunk, finished = trim_at_stop_sequences(chunk)
 
-        thread = Thread(target=_generate)
-        thread.start()
-        
-        # Stream tokens
-        completion = ""
-        parsed_plan: Dict[str, Any] | None = None
-        validation_msg = "🔄 Generating..."
+                    try:
+                        json_block = extract_json_from_text(chunk)
+                        candidate_plan = json.loads(json_block)
+                        ok, issues = validate_router_plan(candidate_plan)
+                        validation_msg = format_validation_message(ok, issues)
+                        parsed_plan = candidate_plan if ok else parsed_plan
+                        display_plan = candidate_plan
+                    except Exception:
+                        # Ignore until JSON is complete
+                        pass
 
-        for new_text in streamer:
-            completion += new_text
-            chunk = completion
-            finished = False
-            display_plan = parsed_plan or {}
+                    yield chunk, display_plan, validation_msg, prompt
 
-            chunk, finished = trim_at_stop_sequences(chunk)
+                    if finished:
+                        completion = chunk
+                        break
+                
+                # Check if generation is finished
+                if request_output.finished:
+                    break
+        else:
+            # Use Transformers pipeline (fallback)
+            # Get the underlying model and tokenizer
+            model = generator.model
+            tokenizer = generator.tokenizer
+            
+            # Set up streaming
+            streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+            
+            # Prepare inputs
+            inputs = tokenizer(prompt, return_tensors="pt")
+            if hasattr(model, 'device'):
+                inputs = {k: v.to(model.device) for k, v in inputs.items()}
+            elif torch.cuda.is_available():
+                inputs = {k: v.cuda() for k, v in inputs.items()}
+            
+            # Start generation in a separate thread
+            generation_kwargs = {
+                **inputs,
+                "max_new_tokens": max_new_tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+                "do_sample": True,
+                "streamer": streamer,
+                "eos_token_id": tokenizer.eos_token_id,
+                "pad_token_id": tokenizer.pad_token_id or tokenizer.eos_token_id,
+            }
 
-            try:
-                json_block = extract_json_from_text(chunk)
-                candidate_plan = json.loads(json_block)
-                ok, issues = validate_router_plan(candidate_plan)
-                validation_msg = format_validation_message(ok, issues)
-                parsed_plan = candidate_plan if ok else parsed_plan
-                display_plan = candidate_plan
-            except Exception:
-                # Ignore until JSON is complete
-                pass
+            def _generate():
+                with torch.inference_mode():
+                    model.generate(**generation_kwargs)
 
-            yield chunk, display_plan, validation_msg, prompt
+            thread = Thread(target=_generate)
+            thread.start()
+            
+            # Stream tokens
+            completion = ""
+            parsed_plan: Dict[str, Any] | None = None
+            validation_msg = "🔄 Generating..."
 
-            if finished:
-                completion = chunk
-                break
+            for new_text in streamer:
+                completion += new_text
+                chunk = completion
+                finished = False
+                display_plan = parsed_plan or {}
 
-        # Final processing after streaming completes
-        thread.join()
+                chunk, finished = trim_at_stop_sequences(chunk)
+
+                try:
+                    json_block = extract_json_from_text(chunk)
+                    candidate_plan = json.loads(json_block)
+                    ok, issues = validate_router_plan(candidate_plan)
+                    validation_msg = format_validation_message(ok, issues)
+                    parsed_plan = candidate_plan if ok else parsed_plan
+                    display_plan = candidate_plan
+                except Exception:
+                    # Ignore until JSON is complete
+                    pass
+
+                yield chunk, display_plan, validation_msg, prompt
+
+                if finished:
+                    completion = chunk
+                    break
+
+            # Final processing after streaming completes
+            thread.join()
 
         completion = trim_at_stop_sequences(completion.strip())[0]
         if parsed_plan is None:
@@ -373,6 +692,71 @@ def generate_router_plan_streaming(
     except Exception as exc:
         error_msg = f"❌ Generation failed: {str(exc)}"
         yield "", {}, error_msg, ""
+
+
+# Pre-create GPU wrappers for common durations at module load time
+# This ensures spaces.GPU decorators are detected during startup
+_GPU_WRAPPERS: Dict[int, Any] = {}
+
+# Create wrappers for durations: 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 
+# 720, 840, 960, 1080, 1200, 1320, 1440, 1560, 1680, 1800 (every 60s from 60 to 1800)
+def _make_gpu_wrapper(duration: int):
+    """Factory function to create GPU-decorated wrapper with closure over duration."""
+    @spaces.GPU(duration=duration)
+    def wrapper(
+        user_task: str,
+        context: str,
+        acceptance: str,
+        extra_guidance: str,
+        difficulty: str,
+        tags: str,
+        model_choice: str,
+        max_new_tokens: int,
+        temperature: float,
+        top_p: float,
+        gpu_duration: int,
+    ):
+        yield from _generate_router_plan_streaming_internal(
+            user_task, context, acceptance, extra_guidance,
+            difficulty, tags, model_choice, max_new_tokens,
+            temperature, top_p, duration
+        )
+    return wrapper
+
+# Pre-create all wrappers at module load time
+for duration in range(60, 1801, 60):
+    _GPU_WRAPPERS[duration] = _make_gpu_wrapper(duration)
+
+
+def generate_router_plan_streaming(
+    user_task: str,
+    context: str,
+    acceptance: str,
+    extra_guidance: str,
+    difficulty: str,
+    tags: str,
+    model_choice: str,
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+    gpu_duration: int = 600,
+):
+    """
+    Generate router plan with streaming output.
+    
+    Uses user-specified gpu_duration to select the appropriate GPU wrapper.
+    """
+    # Round to nearest 60 seconds and clamp between 60 and 1800
+    rounded_duration = ((gpu_duration + 30) // 60) * 60
+    rounded_duration = max(60, min(1800, rounded_duration))
+    
+    # Get the pre-created wrapper with this duration
+    wrapper = _GPU_WRAPPERS[rounded_duration]
+    yield from wrapper(
+        user_task, context, acceptance, extra_guidance,
+        difficulty, tags, model_choice, max_new_tokens,
+        temperature, top_p, rounded_duration
+    )
 
 
 def clear_outputs():
@@ -434,6 +818,7 @@ def build_ui():
                 max_new_tokens = gr.Slider(256, 20000, value=16000, step=32, label="Max New Tokens")
                 temperature = gr.Slider(0.0, 1.5, value=0.2, step=0.05, label="Temperature")
                 top_p = gr.Slider(0.1, 1.0, value=0.9, step=0.05, label="Top-p")
+                gpu_duration = gr.Slider(60, 1800, value=600, step=60, label="GPU Duration (seconds)", info="Maximum GPU time allocation for this request")
 
         generate_btn = gr.Button("Generate Router Plan", variant="primary")
         clear_btn = gr.Button("Clear", variant="secondary")
@@ -457,6 +842,7 @@ def build_ui():
                 max_new_tokens,
                 temperature,
                 top_p,
+                gpu_duration,
             ],
             outputs=[raw_output, plan_json, validation_msg, prompt_view],
             show_progress="full",
@@ -505,13 +891,4 @@ if __name__ == "__main__":  # pragma: no cover
         server_port=int(os.environ.get("PORT", 7860)),
         show_api=True
     )
-def trim_at_stop_sequences(text: str) -> Tuple[str, bool]:
-    earliest = None
-    for stop in STOP_SEQUENCES:
-        idx = text.find(stop)
-        if idx != -1 and (earliest is None or idx < earliest):
-            earliest = idx
-    if earliest is not None:
-        return text[:earliest], True
-    return text, False
 

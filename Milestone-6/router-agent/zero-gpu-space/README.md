@@ -13,12 +13,12 @@ short_description: ZeroGPU UI for CourseGPT-Pro router checkpoints
 
 # 🛰️ Router Control Room — ZeroGPU
 
-This Space exposes the CourseGPT-Pro router checkpoints (Gemma3 27B + Qwen3 32B) with an opinionated Gradio UI. It runs entirely on ZeroGPU hardware using 8-bit loading so you can validate router JSON plans without paying for dedicated GPUs.
+This Space exposes the CourseGPT-Pro router checkpoints (Gemma3 27B + Qwen3 32B) with an opinionated Gradio UI. It runs entirely on ZeroGPU hardware using **AWQ 4-bit quantization** and **FlashAttention-2** for optimized inference, with fallback to 8-bit BitsAndBytes if AWQ is unavailable.
 
 ## ✨ What’s Included
 
 - **Router-specific prompt builder** – inject difficulty, tags, context, acceptance criteria, and additional guidance into the canonical router system prompt.
-- **Two curated checkpoints** – `Router-Qwen3-32B-8bit` and `Router-Gemma3-27B-8bit`, both merged and quantized for ZeroGPU.
+- **Two curated checkpoints** – `Router-Qwen3-32B-AWQ` and `Router-Gemma3-27B-AWQ`, both merged and optimized with AWQ quantization and FlashAttention-2.
 - **JSON extraction + validation** – output is parsed automatically and checked for the required router fields (route_plan, todo_list, metrics, etc.).
 - **Raw output + prompt debug** – inspect the verbatim generation and the exact prompt string sent to the checkpoint.
 - **One-click clear** – reset the UI between experiments without reloading models.
@@ -41,8 +41,16 @@ If JSON parsing fails, the validation panel will surface the error so you can tw
 
 | Name | Base | Notes |
 |------|------|-------|
-| `Router-Qwen3-32B-8bit` | Qwen3 32B | Best overall acceptance on CourseGPT-Pro benchmarks. |
-| `Router-Gemma3-27B-8bit` | Gemma3 27B | Slightly smaller, tends to favour math-first plans. |
+| `Router-Qwen3-32B-AWQ` | Qwen3 32B | Best overall acceptance on CourseGPT-Pro benchmarks. Optimized with AWQ 4-bit quantization and FlashAttention-2. |
+| `Router-Gemma3-27B-AWQ` | Gemma3 27B | Slightly smaller, tends to favour math-first plans. Optimized with AWQ 4-bit quantization and FlashAttention-2. |
+
+### Performance Optimizations
+
+- **AWQ (Activation-Aware Weight Quantization)**: 4-bit quantization for faster inference and lower memory usage
+- **FlashAttention-2**: Optimized attention mechanism for better throughput
+- **TF32 Math**: Enabled for Ampere+ GPUs for faster matrix operations
+- **Kernel Warmup**: Automatic CUDA kernel JIT compilation on startup
+- **Fast Tokenization**: Uses fast tokenizers with CPU preprocessing
 
 Both checkpoints are merged + quantized in the `Alovestocode` namespace and require `HF_TOKEN` with read access.
 
@@ -58,8 +66,10 @@ python app.py
 
 ## 📝 Notes
 
-- The app always attempts 8-bit loading first (bitsandbytes). If that fails, it falls back to bf16/fp16/fp32.
+- The app attempts **AWQ 4-bit quantization** first (if available), then falls back to **8-bit BitsAndBytes**, and finally to bf16/fp16/fp32 if quantization fails.
+- **FlashAttention-2** is automatically enabled when available for improved performance.
+- CUDA kernels are warmed up on startup to reduce first-token latency.
 - The UI enforces single-turn router generations; conversation history and web search are intentionally omitted to match the Milestone 6 deliverable.
 - If you need to re-enable web search or more checkpoints, extend `MODELS` and adjust the prompt builder accordingly.
 - **Benchmarking:** run `python Milestone-6/router-agent/tests/run_router_space_benchmark.py --space Alovestocode/ZeroGPU-LLM-Inference --limit 32` (requires `pip install gradio_client`) to call the Space, dump predictions, and evaluate against the Milestone 5 hard suite + thresholds.
-- Set `ROUTER_PREFETCH_MODEL` (single value) or `ROUTER_PREFETCH_MODELS=Router-Qwen3-32B-8bit,Router-Gemma3-27B-8bit` (comma-separated, `ALL` for every checkpoint) to warm-load weights during startup. Disable background warming by setting `ROUTER_WARM_REMAINING=0`.
+- Set `ROUTER_PREFETCH_MODEL` (single value) or `ROUTER_PREFETCH_MODELS=Router-Qwen3-32B-AWQ,Router-Gemma3-27B-AWQ` (comma-separated, `ALL` for every checkpoint) to warm-load weights during startup. Disable background warming by setting `ROUTER_WARM_REMAINING=0`.
