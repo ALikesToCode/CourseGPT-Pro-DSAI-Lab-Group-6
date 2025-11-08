@@ -1,7 +1,5 @@
 **.env**
 **venv**
-data/ 
-**jsonl**
 **pycache**/
 settings.json
 
@@ -15,3 +13,5 @@ adapters/
 *.pt
 *.bin
 *.ckpt
+kaggle-assignment
+models/
