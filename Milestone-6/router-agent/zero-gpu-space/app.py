@@ -500,7 +500,11 @@ _prefetch_from_env()
 demo = build_ui()
 
 if __name__ == "__main__":  # pragma: no cover
-    demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", 7860)),
+        show_api=True
+    )
 def trim_at_stop_sequences(text: str) -> Tuple[str, bool]:
     earliest = None
     for stop in STOP_SEQUENCES:
