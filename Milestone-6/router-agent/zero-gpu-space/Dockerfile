@@ -15,7 +15,11 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Note: flash-attn requires CUDA for compilation, so skip it for CPU-only Cloud Run deployments
+# The app gracefully handles missing flash-attn (see app.py FLASH_ATTN_AVAILABLE check)
+RUN sed '/^flash-attn/d' requirements.txt > requirements-no-flash.txt && \
+    pip install --no-cache-dir -r requirements-no-flash.txt && \
+    echo "Installed dependencies (skipped flash-attn - requires CUDA)"
 
 # Copy application code
 COPY . .
