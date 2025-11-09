@@ -34,13 +34,16 @@ except ImportError:
     LLM_COMPRESSOR_AVAILABLE = False
     print("Warning: LLM Compressor not available (models should be pre-quantized)")
 
-# Try to import AWQ, fallback to BitsAndBytes if not available
+# Try to import AWQ (deprecated, but kept for fallback compatibility)
+# Note: AutoAWQ is deprecated; vLLM handles AWQ natively via llm-compressor
 try:
     from awq import AutoAWQForCausalLM
     AWQ_AVAILABLE = True
+    import warnings
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="awq")
 except ImportError:
     AWQ_AVAILABLE = False
-    print("Warning: AutoAWQ not available, falling back to BitsAndBytes")
+    print("Info: AutoAWQ not available (using vLLM native AWQ support instead)")
 
 # Always import BitsAndBytesConfig for fallback
 try:
@@ -134,6 +137,7 @@ def load_vllm_model(model_name: str):
     
     try:
         # vLLM configuration optimized for ZeroGPU H200 slice
+        # vLLM natively supports AWQ via llm-compressor (replaces deprecated AutoAWQ)
         llm_kwargs = {
             "model": repo,
             "trust_remote_code": True,
@@ -147,17 +151,24 @@ def load_vllm_model(model_name: str):
             "enable_prefix_caching": True,  # Cache prompts for faster TTFT
         }
         
-        # Add quantization if specified (vLLM auto-detects AWQ)
+        # Add quantization if specified (vLLM auto-detects AWQ via llm-compressor)
         if quantization == "awq":
             llm_kwargs["quantization"] = "awq"
-            # vLLM will auto-detect AWQ weights if present
+            # vLLM will auto-detect AWQ weights if present (handled by llm-compressor)
+            print(f"  → AWQ quantization enabled (vLLM native support)")
         
+        print(f"  → Loading with vLLM (continuous batching, PagedAttention)...")
         llm = LLM(**llm_kwargs)
         VLLM_MODELS[model_name] = llm
-        print(f"✅ vLLM model loaded: {model_name} (continuous batching enabled)")
+        print(f"✅ vLLM model loaded: {model_name}")
+        print(f"   - Continuous batching: enabled (max {llm_kwargs['max_num_seqs']} concurrent)")
+        print(f"   - Prefix caching: enabled")
+        print(f"   - Quantization: {quantization or 'none (bf16)'}")
         return llm
     except Exception as exc:
         print(f"❌ vLLM load failed for {repo}: {exc}")
+        import traceback
+        traceback.print_exc()
         raise
 
 
@@ -201,37 +212,54 @@ def load_awq_pipeline(repo: str, tokenizer):
 
 
 def load_pipeline(model_name: str):
-    """Load model with vLLM (preferred) or Transformers (fallback)."""
-    # Try vLLM first (best performance with AWQ support)
+    """Load model with vLLM (preferred) or Transformers (fallback).
+    
+    Fallback chain:
+    1. vLLM with AWQ (best performance, continuous batching)
+    2. vLLM with FP16 (if AWQ not available)
+    3. Transformers with AWQ (via AutoAWQ - deprecated but functional)
+    4. Transformers with BitsAndBytes 8-bit
+    5. Transformers with FP16/FP32
+    """
+    # Try vLLM first (best performance with native AWQ support via llm-compressor)
+    # vLLM handles AWQ natively, so AutoAWQ deprecation doesn't affect us
     if VLLM_AVAILABLE:
         try:
+            print(f"🔄 Attempting to load {model_name} with vLLM (native AWQ support)...")
             return load_vllm_model(model_name)
         except Exception as exc:
-            print(f"vLLM load failed, falling back to Transformers: {exc}")
+            print(f"⚠️ vLLM load failed: {exc}")
+            print(f"   → Falling back to Transformers pipeline...")
+            import traceback
+            traceback.print_exc()
     
     # Fallback to Transformers pipeline
     if model_name in PIPELINES:
+        print(f"✅ Using cached Transformers pipeline for {model_name}")
         return PIPELINES[model_name]
 
     repo = MODELS[model_name]["repo_id"]
     tokenizer = get_tokenizer(repo)
 
-    # Try AWQ first if available
+    # Try AWQ first if available (Transformers fallback path)
     if AWQ_AVAILABLE:
         try:
-            print(f"Loading {repo} with AWQ quantization...")
+            print(f"🔄 Loading {repo} with Transformers + AutoAWQ (fallback path)...")
             pipe = load_awq_pipeline(repo, tokenizer)
             PIPELINES[model_name] = pipe
             _schedule_background_warm(model_name)
             # Warm kernels immediately after loading
             Thread(target=lambda: _warm_kernels(model_name), daemon=True).start()
+            print(f"✅ Transformers + AutoAWQ pipeline loaded: {model_name}")
             return pipe
         except Exception as exc:
-            print(f"AWQ load failed for {repo}: {exc}. Falling back to BitsAndBytes.")
+            print(f"⚠️ AutoAWQ load failed for {repo}: {exc}")
+            print(f"   → Falling back to BitsAndBytes 8-bit...")
 
     # Fallback to BitsAndBytes 8-bit
     if BITSANDBYTES_AVAILABLE:
         try:
+            print(f"🔄 Loading {repo} with BitsAndBytes 8-bit quantization...")
             quant_config = BitsAndBytesConfig(load_in_8bit=True)
             model_kwargs = {"quantization_config": quant_config}
             if FLASH_ATTN_AVAILABLE:
@@ -248,6 +276,7 @@ def load_pipeline(model_name: str):
                 token=HF_TOKEN,
                 torch_dtype=torch.bfloat16,
             )
+            
             pipe.model.eval()
             
             # Apply torch.compile for kernel fusion (~10-20% speedup after first call)
@@ -259,13 +288,17 @@ def load_pipeline(model_name: str):
             
             PIPELINES[model_name] = pipe
             _schedule_background_warm(model_name)
+            print(f"✅ BitsAndBytes 8-bit pipeline loaded: {model_name}")
             return pipe
         except Exception as exc:
-            print(f"8-bit load failed for {repo}: {exc}. Falling back to higher precision.")
+            print(f"⚠️ BitsAndBytes 8-bit load failed for {repo}: {exc}")
+            print(f"   → Falling back to FP16/FP32...")
 
-    # Fallback to bfloat16/fp16/fp32
+    # Fallback to bfloat16/fp16/fp32 (unquantized)
     for dtype in (torch.bfloat16, torch.float16, torch.float32):
+        dtype_name = {torch.bfloat16: "bfloat16", torch.float16: "float16", torch.float32: "float32"}[dtype]
         try:
+            print(f"🔄 Loading {repo} with {dtype_name} precision...")
             model_kwargs = {}
             if FLASH_ATTN_AVAILABLE:
                 model_kwargs["attn_implementation"] = "flash_attention_2"
@@ -292,11 +325,14 @@ def load_pipeline(model_name: str):
             
             PIPELINES[model_name] = pipe
             _schedule_background_warm(model_name)
+            print(f"✅ {dtype_name} pipeline loaded: {model_name}")
             return pipe
-        except Exception:
+        except Exception as exc:
+            print(f"⚠️ {dtype_name} load failed: {exc}")
             continue
 
-    # Final fallback
+    # Final fallback (no quantization, no FlashAttention)
+    print(f"⚠️ All quantization methods failed, using basic pipeline...")
     model_kwargs = {}
     if FLASH_ATTN_AVAILABLE:
         model_kwargs["attn_implementation"] = "flash_attention_2"
@@ -322,6 +358,7 @@ def load_pipeline(model_name: str):
     
     PIPELINES[model_name] = pipe
     _schedule_background_warm(model_name)
+    print(f"✅ Basic pipeline loaded: {model_name}")
     return pipe
 
 
@@ -642,8 +679,8 @@ def _generate_router_plan_streaming_internal(
 
             thread = Thread(target=_generate)
             thread.start()
-            
-            # Stream tokens
+
+        # Stream tokens
             completion = ""
             parsed_plan: Dict[str, Any] | None = None
             validation_msg = "🔄 Generating..."
@@ -671,8 +708,8 @@ def _generate_router_plan_streaming_internal(
 
                 if finished:
                     completion = chunk
-                    break
-
+                break
+            
             # Final processing after streaming completes
             thread.join()
 
@@ -772,7 +809,7 @@ def build_ui():
     """) as demo:
         gr.Markdown("# 🛰️ Router Control Room — ZeroGPU" )
         gr.Markdown(description)
-
+        
         with gr.Row():
             with gr.Column(scale=3):
                 user_task = gr.Textbox(
@@ -820,8 +857,9 @@ def build_ui():
                 top_p = gr.Slider(0.1, 1.0, value=0.9, step=0.05, label="Top-p")
                 gpu_duration = gr.Slider(60, 1800, value=600, step=60, label="GPU Duration (seconds)", info="Maximum GPU time allocation for this request")
 
-        generate_btn = gr.Button("Generate Router Plan", variant="primary")
-        clear_btn = gr.Button("Clear", variant="secondary")
+        with gr.Row():
+            generate_btn = gr.Button("Generate Router Plan", variant="primary", scale=1)
+            clear_btn = gr.Button("Clear", variant="secondary", scale=1)
 
         with gr.Row():
             raw_output = gr.Textbox(label="Raw Model Output", lines=12)
@@ -886,9 +924,14 @@ _prefetch_from_env()
 demo = build_ui()
 
 if __name__ == "__main__":  # pragma: no cover
+    # Support both Hugging Face Spaces and Google Cloud Run
+    # Cloud Run uses PORT, Hugging Face Spaces uses GRADIO_SERVER_PORT
+    port = int(os.environ.get("PORT", os.environ.get("GRADIO_SERVER_PORT", 7860)))
+    server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
+    
     demo.launch(
-        server_name="0.0.0.0",
-        server_port=int(os.environ.get("PORT", 7860)),
+        server_name=server_name,
+        server_port=port,
         show_api=True
     )
 
