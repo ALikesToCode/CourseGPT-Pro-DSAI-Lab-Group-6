@@ -111,7 +111,7 @@ MODELS = {
         "quantization": "awq",  # vLLM will auto-detect AWQ
     },
     "Router-Gemma3-27B-AWQ": {
-        "repo_id": "Alovestocode/router-gemma3-merged",
+        "repo_id": "Alovestocode/router-gemma3-merged-awq",  # AWQ quantized model
         "description": "Router checkpoint on Gemma3 27B merged, optimized with AWQ quantization via vLLM.",
         "params_b": 27.0,
         "quantization": "awq",  # vLLM will auto-detect AWQ
@@ -200,16 +200,20 @@ def load_vllm_model(model_name: str):
         # Add quantization if specified (vLLM auto-detects AWQ via llm-compressor)
         if quantization == "awq":
             llm_kwargs["quantization"] = "awq"
-            # vLLM will auto-detect AWQ weights if present (handled by llm-compressor)
+            # vLLM will auto-detect AWQ weights from quantization_config.json at repo root
+            # Weights may be in a 'default' subfolder (LLM Compressor stage structure)
+            # vLLM handles this automatically via the quantization config
             # Enable FP8 KV cache for 50% memory reduction (allows longer contexts)
             # FP8 KV cache is compatible with AWQ quantization
             try:
                 llm_kwargs["kv_cache_dtype"] = "fp8"
                 print(f"  → AWQ quantization + FP8 KV cache enabled (vLLM native support)")
                 print(f"  → FP8 KV cache reduces memory by ~50%, enabling longer contexts")
+                print(f"  → Loading AWQ model from: {repo}")
             except Exception:
                 # Fallback if FP8 KV cache not supported
                 print(f"  → AWQ quantization enabled (FP8 KV cache not available)")
+                print(f"  → Loading AWQ model from: {repo}")
         elif quantization == "fp8":
             # Try FP8 quantization if available (faster than AWQ)
             try:
