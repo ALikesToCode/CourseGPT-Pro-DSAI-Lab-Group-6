@@ -173,14 +173,14 @@ def load_vllm_model(model_name: str):
     repo = model_config["repo_id"]
     quantization = model_config.get("quantization", None)
     
-    # For AWQ models, files are in the 'default' subfolder
-    # vLLM needs to point to the actual model location
-    # Since files are in default/, we need to use the full path: repo/default
+    # For AWQ models, vLLM should point to repo root (not default/ subfolder)
+    # vLLM will find quantization_config.json at root, which points to default/ subfolder
+    # The quantization_config.json tells vLLM where the actual model files are
     if quantization == "awq":
-        # AWQ models from LLM Compressor have files in default/ subfolder
-        # Point vLLM directly to the default/ subfolder where model files are located
-        model_path = f"{repo}/default"
-        print(f"Loading {model_path} with vLLM (AWQ quantization, files in default/ subfolder)...")
+        # Point to repo root - vLLM will auto-detect AWQ via quantization_config.json
+        # The config file at root tells vLLM the model files are in default/ subfolder
+        model_path = repo  # Use repo root, not repo/default
+        print(f"Loading {model_path} with vLLM (AWQ quantization, vLLM will find files in default/ via quantization_config.json)...")
     else:
         model_path = repo
         print(f"Loading {model_path} with vLLM (quantization: {quantization})...")
@@ -214,11 +214,20 @@ def load_vllm_model(model_name: str):
         
         # Ensure CUDA_VISIBLE_DEVICES is set correctly for vLLM device detection
         # ZeroGPU uses MIG UUIDs, but vLLM needs numeric device index
+        # IMPORTANT: Set this BEFORE creating LLM() instance, as vLLM checks device during init
         cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
         if not cuda_visible or not cuda_visible.isdigit():
             # If CUDA_VISIBLE_DEVICES is a MIG UUID or empty, use "0" for single GPU
             os.environ["CUDA_VISIBLE_DEVICES"] = "0"
             print(f"  → Set CUDA_VISIBLE_DEVICES=0 (was: {cuda_visible})")
+        
+        # Force torch to see the correct device after setting CUDA_VISIBLE_DEVICES
+        # This ensures vLLM's device detection works correctly
+        import torch
+        if torch.cuda.is_available():
+            # Verify device is accessible
+            device_name = torch.cuda.get_device_name(0)
+            print(f"  → Verified CUDA device accessible: {device_name}")
         
         # Add quantization if specified (vLLM auto-detects AWQ via llm-compressor)
         if quantization == "awq":
@@ -327,15 +336,28 @@ def load_pipeline(model_name: str):
         print(f"✅ Using cached Transformers pipeline for {model_name}")
         return PIPELINES[model_name]
 
-    repo = MODELS[model_name]["repo_id"]
-    tokenizer_repo = MODELS[model_name].get("tokenizer_repo", None)
+    model_config = MODELS[model_name]
+    repo = model_config["repo_id"]
+    tokenizer_repo = model_config.get("tokenizer_repo", None)
+    quantization = model_config.get("quantization", None)
+    
+    # For AWQ models, the AWQ repo doesn't have standard model files (they're in default/)
+    # Use the original repo for Transformers fallback, not the AWQ repo
+    if quantization == "awq" and tokenizer_repo:
+        # AWQ repos have files in default/ subfolder which Transformers can't load directly
+        # Use the original repo for Transformers fallback
+        transformers_repo = tokenizer_repo  # Use original repo for Transformers
+        print(f"⚠️ AWQ model detected - Transformers fallback will use original repo: {transformers_repo}")
+    else:
+        transformers_repo = repo
+    
     tokenizer = get_tokenizer(repo, tokenizer_repo=tokenizer_repo)
 
     # Try AWQ first if available (Transformers fallback path)
     if AWQ_AVAILABLE:
         try:
-            print(f"🔄 Loading {repo} with Transformers + AutoAWQ (fallback path)...")
-            pipe = load_awq_pipeline(repo, tokenizer)
+            print(f"🔄 Loading {transformers_repo} with Transformers + AutoAWQ (fallback path)...")
+            pipe = load_awq_pipeline(transformers_repo, tokenizer)
             PIPELINES[model_name] = pipe
             _schedule_background_warm(model_name)
             # Warm kernels immediately after loading
@@ -343,13 +365,13 @@ def load_pipeline(model_name: str):
             print(f"✅ Transformers + AutoAWQ pipeline loaded: {model_name}")
             return pipe
         except Exception as exc:
-            print(f"⚠️ AutoAWQ load failed for {repo}: {exc}")
+            print(f"⚠️ AutoAWQ load failed for {transformers_repo}: {exc}")
             print(f"   → Falling back to BitsAndBytes 8-bit...")
 
     # Fallback to BitsAndBytes 8-bit
     if BITSANDBYTES_AVAILABLE:
         try:
-            print(f"🔄 Loading {repo} with BitsAndBytes 8-bit quantization...")
+            print(f"🔄 Loading {transformers_repo} with BitsAndBytes 8-bit quantization...")
             quant_config = BitsAndBytesConfig(load_in_8bit=True)
             model_kwargs = {"quantization_config": quant_config}
             if FLASH_ATTN_AVAILABLE:
@@ -357,7 +379,7 @@ def load_pipeline(model_name: str):
             
             pipe = pipeline(
                 task="text-generation",
-                model=repo,
+                model=transformers_repo,
                 tokenizer=tokenizer,
                 trust_remote_code=True,
                 device_map="auto",
