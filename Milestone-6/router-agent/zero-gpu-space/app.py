@@ -403,21 +403,21 @@ def load_pipeline(model_name: str):
             print(f"✅ BitsAndBytes 8-bit pipeline loaded: {model_name}")
             return pipe
         except Exception as exc:
-            print(f"⚠️ BitsAndBytes 8-bit load failed for {repo}: {exc}")
+            print(f"⚠️ BitsAndBytes 8-bit load failed for {transformers_repo}: {exc}")
             print(f"   → Falling back to FP16/FP32...")
 
     # Fallback to bfloat16/fp16/fp32 (unquantized)
     for dtype in (torch.bfloat16, torch.float16, torch.float32):
         dtype_name = {torch.bfloat16: "bfloat16", torch.float16: "float16", torch.float32: "float32"}[dtype]
         try:
-            print(f"🔄 Loading {repo} with {dtype_name} precision...")
+            print(f"🔄 Loading {transformers_repo} with {dtype_name} precision...")
             model_kwargs = {}
             if FLASH_ATTN_AVAILABLE:
                 model_kwargs["attn_implementation"] = "flash_attention_2"
             
             pipe = pipeline(
                 task="text-generation",
-                model=repo,
+                model=transformers_repo,
                 tokenizer=tokenizer,
                 trust_remote_code=True,
                 device_map="auto",
@@ -451,7 +451,7 @@ def load_pipeline(model_name: str):
     
     pipe = pipeline(
         task="text-generation",
-        model=repo,
+        model=transformers_repo,
         tokenizer=tokenizer,
         trust_remote_code=True,
         device_map="auto",
