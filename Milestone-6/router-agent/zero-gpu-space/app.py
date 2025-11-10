@@ -105,7 +105,7 @@ ROUTER_SYSTEM_PROMPT = """You are the Router Agent coordinating Math, Code, and 
 
 MODELS = {
     "Router-Qwen3-32B-AWQ": {
-        "repo_id": "Alovestocode/router-qwen3-32b-merged",
+        "repo_id": "Alovestocode/router-qwen3-32b-merged-awq",  # AWQ quantized model
         "description": "Router checkpoint on Qwen3 32B merged, optimized with AWQ quantization via vLLM.",
         "params_b": 32.0,
         "quantization": "awq",  # vLLM will auto-detect AWQ
