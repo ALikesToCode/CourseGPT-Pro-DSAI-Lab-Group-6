@@ -14,6 +14,17 @@ from threading import Thread
 # Enable optimizations
 torch.backends.cuda.matmul.allow_tf32 = True
 
+# Ensure CUDA is visible to vLLM on ZeroGPU
+# vLLM needs explicit CUDA device configuration
+if torch.cuda.is_available():
+    # Set CUDA_VISIBLE_DEVICES if not already set (helps vLLM detect GPU)
+    if "CUDA_VISIBLE_DEVICES" not in os.environ:
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    print(f"CUDA detected: {torch.cuda.get_device_name(0)}")
+    print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
+else:
+    print("WARNING: CUDA not available - vLLM will not work")
+
 # Try to import vLLM (primary inference engine)
 try:
     from vllm import LLM, SamplingParams
@@ -25,14 +36,35 @@ except ImportError:
     SamplingParams = None
     print("Warning: vLLM not available, falling back to Transformers")
 
-# Try to import LLM Compressor (for quantization)
+# Try to import LLM Compressor (for quantization - optional, vLLM has native AWQ support)
+# Note: llm-compressor is only needed for quantizing models, not for loading pre-quantized AWQ models
+# vLLM can load AWQ models natively without llm-compressor
 try:
-    from llmcompressor import oneshot
-    from llmcompressor.modifiers.quantization import AWQModifier
+    # Try both package names (llm-compressor and llmcompressor)
+    try:
+        from llmcompressor import oneshot
+        # Correct import path: AWQModifier is in modifiers.awq, not modifiers.quantization
+        from llmcompressor.modifiers.awq import AWQModifier
+    except ImportError:
+        # Try alternative package name
+        import sys
+        import subprocess
+        # Package might be named llm-compressor (with hyphen)
+        try:
+            import importlib.util
+            spec = importlib.util.find_spec("llm_compressor")
+            if spec is None:
+                raise ImportError("llm-compressor not found")
+            from llm_compressor import oneshot
+            from llm_compressor.modifiers.awq import AWQModifier
+        except ImportError:
+            raise ImportError("Neither llmcompressor nor llm-compressor found")
     LLM_COMPRESSOR_AVAILABLE = True
+    print("Info: LLM Compressor available (for quantizing models)")
 except ImportError:
     LLM_COMPRESSOR_AVAILABLE = False
-    print("Warning: LLM Compressor not available (models should be pre-quantized)")
+    # This is fine - vLLM has native AWQ support, so we don't need llm-compressor for loading
+    print("Info: LLM Compressor not available (not needed - vLLM has native AWQ support for pre-quantized models)")
 
 # Try to import AWQ (deprecated, but kept for fallback compatibility)
 # Note: AutoAWQ is deprecated; vLLM handles AWQ natively via llm-compressor
@@ -136,12 +168,22 @@ def load_vllm_model(model_name: str):
     print(f"Loading {repo} with vLLM (quantization: {quantization})...")
     
     try:
+        # Detect device explicitly for vLLM
+        # vLLM needs explicit device configuration on ZeroGPU
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA not available - vLLM requires GPU. Falling back to Transformers pipeline.")
+        
+        print(f"  → CUDA available: {torch.cuda.get_device_name(0)}")
+        print(f"  → CUDA device count: {torch.cuda.device_count()}")
+        print(f"  → CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
+        
         # vLLM configuration optimized for ZeroGPU H200 slice
         # vLLM natively supports AWQ via llm-compressor (replaces deprecated AutoAWQ)
+        # Note: HF_TOKEN is passed via environment variable, not as a parameter
+        # vLLM auto-detects CUDA from torch.cuda.is_available() and CUDA_VISIBLE_DEVICES
         llm_kwargs = {
             "model": repo,
             "trust_remote_code": True,
-            "token": HF_TOKEN,
             "dtype": "bfloat16",  # Prefer bf16 over int8 for speed
             "gpu_memory_utilization": 0.90,  # Leave headroom for KV cache
             "max_model_len": 16384,  # Adjust based on GPU memory
@@ -151,11 +193,31 @@ def load_vllm_model(model_name: str):
             "enable_prefix_caching": True,  # Cache prompts for faster TTFT
         }
         
+        # Ensure CUDA_VISIBLE_DEVICES is set for vLLM device detection
+        if "CUDA_VISIBLE_DEVICES" not in os.environ:
+            os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        
         # Add quantization if specified (vLLM auto-detects AWQ via llm-compressor)
         if quantization == "awq":
             llm_kwargs["quantization"] = "awq"
             # vLLM will auto-detect AWQ weights if present (handled by llm-compressor)
-            print(f"  → AWQ quantization enabled (vLLM native support)")
+            # Enable FP8 KV cache for 50% memory reduction (allows longer contexts)
+            # FP8 KV cache is compatible with AWQ quantization
+            try:
+                llm_kwargs["kv_cache_dtype"] = "fp8"
+                print(f"  → AWQ quantization + FP8 KV cache enabled (vLLM native support)")
+                print(f"  → FP8 KV cache reduces memory by ~50%, enabling longer contexts")
+            except Exception:
+                # Fallback if FP8 KV cache not supported
+                print(f"  → AWQ quantization enabled (FP8 KV cache not available)")
+        elif quantization == "fp8":
+            # Try FP8 quantization if available (faster than AWQ)
+            try:
+                llm_kwargs["quantization"] = "fp8"
+                llm_kwargs["dtype"] = "float8_e5m2"
+                print(f"  → FP8 quantization enabled (~2x faster than AWQ)")
+            except Exception:
+                print(f"  → FP8 quantization not available, falling back to bf16")
         
         print(f"  → Loading with vLLM (continuous batching, PagedAttention)...")
         llm = LLM(**llm_kwargs)
@@ -581,18 +643,24 @@ def _generate_router_plan_streaming_internal(
             tags=tags,
         )
 
+        print(f"[DEBUG] Loading model: {model_choice}")
         generator = load_pipeline(model_choice)
+        print(f"[DEBUG] Model loaded successfully: {type(generator)}")
         
         # Check if using vLLM or Transformers
         is_vllm = VLLM_AVAILABLE and isinstance(generator, LLM)
         
         if is_vllm:
             # Use vLLM streaming API with continuous batching
+            # Optimized sampling parameters for router plan generation
             sampling_params = SamplingParams(
                 temperature=temperature,
                 top_p=top_p,
                 max_tokens=max_new_tokens,
                 stop=STOP_SEQUENCES,
+                skip_special_tokens=False,  # Keep special tokens for parsing
+                spaces_between_special_tokens=False,  # Don't add spaces around special tokens
+                include_stop_str_in_output=False,  # Don't include stop sequences in output
             )
             
             # vLLM streaming generation (non-blocking, continuous batching)
@@ -673,48 +741,87 @@ def _generate_router_plan_streaming_internal(
                 "pad_token_id": tokenizer.pad_token_id or tokenizer.eos_token_id,
             }
 
+            generation_error = None
+            
             def _generate():
-                with torch.inference_mode():
-                    model.generate(**generation_kwargs)
+                nonlocal generation_error
+                try:
+                    with torch.inference_mode():
+                        model.generate(**generation_kwargs)
+                except Exception as e:
+                    generation_error = e
+                    print(f"[DEBUG] Generation thread error: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             thread = Thread(target=_generate)
             thread.start()
 
-        # Stream tokens
+            # Stream tokens
             completion = ""
             parsed_plan: Dict[str, Any] | None = None
             validation_msg = "🔄 Generating..."
+            
+            print(f"[DEBUG] Starting to consume streamer...")
+            token_count = 0
+            
+            try:
+                for new_text in streamer:
+                    if generation_error:
+                        raise generation_error
+                    
+                    if new_text:
+                        token_count += 1
+                        completion += new_text
+                        chunk = completion
+                        finished = False
+                        display_plan = parsed_plan or {}
 
-            for new_text in streamer:
-                completion += new_text
-                chunk = completion
-                finished = False
-                display_plan = parsed_plan or {}
+                        chunk, finished = trim_at_stop_sequences(chunk)
 
-                chunk, finished = trim_at_stop_sequences(chunk)
+                        try:
+                            json_block = extract_json_from_text(chunk)
+                            candidate_plan = json.loads(json_block)
+                            ok, issues = validate_router_plan(candidate_plan)
+                            validation_msg = format_validation_message(ok, issues)
+                            parsed_plan = candidate_plan if ok else parsed_plan
+                            display_plan = candidate_plan
+                        except Exception:
+                            # Ignore until JSON is complete
+                            pass
 
-                try:
-                    json_block = extract_json_from_text(chunk)
-                    candidate_plan = json.loads(json_block)
-                    ok, issues = validate_router_plan(candidate_plan)
-                    validation_msg = format_validation_message(ok, issues)
-                    parsed_plan = candidate_plan if ok else parsed_plan
-                    display_plan = candidate_plan
-                except Exception:
-                    # Ignore until JSON is complete
-                    pass
+                        yield chunk, display_plan, validation_msg, prompt
 
-                yield chunk, display_plan, validation_msg, prompt
-
-                if finished:
-                    completion = chunk
-                break
+                        if finished:
+                            completion = chunk
+                            break
+                
+                print(f"[DEBUG] Streamer finished. Received {token_count} tokens.")
+            except Exception as stream_error:
+                print(f"[DEBUG] Streamer error: {stream_error}")
+                import traceback
+                traceback.print_exc()
+                # Wait for thread to finish
+                thread.join(timeout=5.0)
+                if generation_error:
+                    raise generation_error
+                raise stream_error
             
             # Final processing after streaming completes
-            thread.join()
+            thread.join(timeout=30.0)
+            if thread.is_alive():
+                print("[DEBUG] WARNING: Generation thread still running after timeout")
+            
+            if generation_error:
+                raise generation_error
 
         completion = trim_at_stop_sequences(completion.strip())[0]
-        if parsed_plan is None:
+        print(f"[DEBUG] Final completion length: {len(completion)}")
+        
+        if not completion:
+            print("[DEBUG] WARNING: Completion is empty - model may not have generated output")
+            validation_msg = "⚠️ Model generated empty output. Check GPU allocation and model loading."
+        elif parsed_plan is None:
             try:
                 json_block = extract_json_from_text(completion)
                 parsed_plan = json.loads(json_block)
@@ -723,10 +830,14 @@ def _generate_router_plan_streaming_internal(
             except Exception as exc:
                 parsed_plan = {}
                 validation_msg = f"❌ JSON parsing failed: {exc}"
+                print(f"[DEBUG] JSON parsing error: {exc}")
 
         yield completion, parsed_plan, validation_msg, prompt
         
     except Exception as exc:
+        import traceback
+        print(f"[DEBUG] Exception in generation: {exc}")
+        print(f"[DEBUG] Traceback: {traceback.format_exc()}")
         error_msg = f"❌ Generation failed: {str(exc)}"
         yield "", {}, error_msg, ""
 
