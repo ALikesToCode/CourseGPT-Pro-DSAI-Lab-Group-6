@@ -16,9 +16,12 @@ torch.backends.cuda.matmul.allow_tf32 = True
 
 # Ensure CUDA is visible to vLLM on ZeroGPU
 # vLLM needs explicit CUDA device configuration
+# ZeroGPU uses MIG UUIDs, but vLLM needs numeric device index
 if torch.cuda.is_available():
-    # Set CUDA_VISIBLE_DEVICES if not already set (helps vLLM detect GPU)
-    if "CUDA_VISIBLE_DEVICES" not in os.environ:
+    # Set CUDA_VISIBLE_DEVICES if not already set or if it's a MIG UUID
+    cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if not cuda_visible or not cuda_visible.isdigit():
+        # If CUDA_VISIBLE_DEVICES is a MIG UUID or empty, use "0" for single GPU
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     print(f"CUDA detected: {torch.cuda.get_device_name(0)}")
     print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
@@ -106,12 +109,14 @@ ROUTER_SYSTEM_PROMPT = """You are the Router Agent coordinating Math, Code, and 
 MODELS = {
     "Router-Qwen3-32B-AWQ": {
         "repo_id": "Alovestocode/router-qwen3-32b-merged-awq",  # AWQ quantized model
+        "tokenizer_repo": "Alovestocode/router-qwen3-32b-merged",  # Tokenizer from original repo
         "description": "Router checkpoint on Qwen3 32B merged, optimized with AWQ quantization via vLLM.",
         "params_b": 32.0,
         "quantization": "awq",  # vLLM will auto-detect AWQ
     },
     "Router-Gemma3-27B-AWQ": {
         "repo_id": "Alovestocode/router-gemma3-merged-awq",  # AWQ quantized model
+        "tokenizer_repo": "Alovestocode/router-gemma3-merged",  # Tokenizer from original repo
         "description": "Router checkpoint on Gemma3 27B merged, optimized with AWQ quantization via vLLM.",
         "params_b": 27.0,
         "quantization": "awq",  # vLLM will auto-detect AWQ
@@ -138,12 +143,15 @@ WARMED_REMAINING = False
 TOOL_PATTERN = re.compile(r"^/[a-z0-9_-]+\(.*\)$", re.IGNORECASE)
 
 
-def get_tokenizer(repo: str):
-    tok = TOKENIZER_CACHE.get(repo)
+def get_tokenizer(repo: str, tokenizer_repo: str = None):
+    """Get tokenizer, preferring tokenizer_repo if provided (for AWQ models)."""
+    # Use tokenizer_repo if provided (for AWQ models where tokenizer is in original repo)
+    actual_repo = tokenizer_repo if tokenizer_repo else repo
+    tok = TOKENIZER_CACHE.get(actual_repo)
     if tok is not None:
         return tok
     tok = AutoTokenizer.from_pretrained(
-        repo, 
+        actual_repo, 
         token=HF_TOKEN,
         use_fast=True,
         trust_remote_code=True
@@ -152,7 +160,7 @@ def get_tokenizer(repo: str):
     tok.truncation_side = "left"
     if tok.pad_token_id is None and tok.eos_token_id is not None:
         tok.pad_token_id = tok.eos_token_id
-    TOKENIZER_CACHE[repo] = tok
+    TOKENIZER_CACHE[actual_repo] = tok
     return tok
 
 
@@ -161,11 +169,21 @@ def load_vllm_model(model_name: str):
     if model_name in VLLM_MODELS:
         return VLLM_MODELS[model_name]
     
-    repo = MODELS[model_name]["repo_id"]
     model_config = MODELS[model_name]
+    repo = model_config["repo_id"]
     quantization = model_config.get("quantization", None)
     
-    print(f"Loading {repo} with vLLM (quantization: {quantization})...")
+    # For AWQ models, files are in the 'default' subfolder
+    # vLLM needs to point to the actual model location
+    # Since files are in default/, we need to use the full path: repo/default
+    if quantization == "awq":
+        # AWQ models from LLM Compressor have files in default/ subfolder
+        # Point vLLM directly to the default/ subfolder where model files are located
+        model_path = f"{repo}/default"
+        print(f"Loading {model_path} with vLLM (AWQ quantization, files in default/ subfolder)...")
+    else:
+        model_path = repo
+        print(f"Loading {model_path} with vLLM (quantization: {quantization})...")
     
     try:
         # Detect device explicitly for vLLM
@@ -181,8 +199,9 @@ def load_vllm_model(model_name: str):
         # vLLM natively supports AWQ via llm-compressor (replaces deprecated AutoAWQ)
         # Note: HF_TOKEN is passed via environment variable, not as a parameter
         # vLLM auto-detects CUDA from torch.cuda.is_available() and CUDA_VISIBLE_DEVICES
+        # For AWQ models with files in default/ subfolder, vLLM should auto-detect via quantization_config.json
         llm_kwargs = {
-            "model": repo,
+            "model": model_path,  # Use model_path which may point to default/ subfolder
             "trust_remote_code": True,
             "dtype": "bfloat16",  # Prefer bf16 over int8 for speed
             "gpu_memory_utilization": 0.90,  # Leave headroom for KV cache
@@ -193,27 +212,31 @@ def load_vllm_model(model_name: str):
             "enable_prefix_caching": True,  # Cache prompts for faster TTFT
         }
         
-        # Ensure CUDA_VISIBLE_DEVICES is set for vLLM device detection
-        if "CUDA_VISIBLE_DEVICES" not in os.environ:
+        # Ensure CUDA_VISIBLE_DEVICES is set correctly for vLLM device detection
+        # ZeroGPU uses MIG UUIDs, but vLLM needs numeric device index
+        cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        if not cuda_visible or not cuda_visible.isdigit():
+            # If CUDA_VISIBLE_DEVICES is a MIG UUID or empty, use "0" for single GPU
             os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+            print(f"  → Set CUDA_VISIBLE_DEVICES=0 (was: {cuda_visible})")
         
         # Add quantization if specified (vLLM auto-detects AWQ via llm-compressor)
         if quantization == "awq":
             llm_kwargs["quantization"] = "awq"
-            # vLLM will auto-detect AWQ weights from quantization_config.json at repo root
-            # Weights may be in a 'default' subfolder (LLM Compressor stage structure)
-            # vLLM handles this automatically via the quantization config
+            # AWQ model files are in the 'default' subfolder
+            # vLLM should auto-detect this via quantization_config.json at repo root
+            # If auto-detection fails, we can explicitly point to default/ subfolder
             # Enable FP8 KV cache for 50% memory reduction (allows longer contexts)
             # FP8 KV cache is compatible with AWQ quantization
             try:
                 llm_kwargs["kv_cache_dtype"] = "fp8"
                 print(f"  → AWQ quantization + FP8 KV cache enabled (vLLM native support)")
                 print(f"  → FP8 KV cache reduces memory by ~50%, enabling longer contexts")
-                print(f"  → Loading AWQ model from: {repo}")
+                print(f"  → Loading AWQ model from: {model_path} (files in default/ subfolder)")
             except Exception:
                 # Fallback if FP8 KV cache not supported
                 print(f"  → AWQ quantization enabled (FP8 KV cache not available)")
-                print(f"  → Loading AWQ model from: {repo}")
+                print(f"  → Loading AWQ model from: {model_path} (files in default/ subfolder)")
         elif quantization == "fp8":
             # Try FP8 quantization if available (faster than AWQ)
             try:
@@ -305,7 +328,8 @@ def load_pipeline(model_name: str):
         return PIPELINES[model_name]
 
     repo = MODELS[model_name]["repo_id"]
-    tokenizer = get_tokenizer(repo)
+    tokenizer_repo = MODELS[model_name].get("tokenizer_repo", None)
+    tokenizer = get_tokenizer(repo, tokenizer_repo=tokenizer_repo)
 
     # Try AWQ first if available (Transformers fallback path)
     if AWQ_AVAILABLE:
