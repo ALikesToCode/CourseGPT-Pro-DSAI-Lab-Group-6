@@ -65,7 +65,11 @@ def test_imports():
     
     # Test compressed_tensors imports (usually comes with llmcompressor)
     try:
-        from compressed_tensors.quantization import QuantizationConfig, BaseQuantizationConfig
+        from compressed_tensors.quantization import QuantizationScheme, QuantizationArgs
+        from compressed_tensors.quantization.quant_args import (
+            QuantizationStrategy,
+            QuantizationType,
+        )
         print("✅ compressed_tensors.quantization")
     except ImportError:
         print("⚠️ compressed_tensors (not installed locally - will install in Colab)")
@@ -93,24 +97,36 @@ def test_awq_modifier_creation():
     
     try:
         from llmcompressor.modifiers.awq import AWQModifier
-        from compressed_tensors.quantization import QuantizationConfig, BaseQuantizationConfig
-        
-        # Create quantization config (same as notebook)
-        print("  → Creating QuantizationConfig...")
-        quant_config = QuantizationConfig(
-            config_groups={
-                "default": BaseQuantizationConfig(
-                    num_bits=4,
-                    group_size=128,
-                    zero_point=True
-                )
-            }
+        from compressed_tensors.quantization import QuantizationScheme, QuantizationArgs
+        from compressed_tensors.quantization.quant_args import (
+            QuantizationStrategy,
+            QuantizationType,
         )
-        print("  ✅ QuantizationConfig created")
+        
+        # Create quantization scheme (mirrors notebook helper)
+        print("  → Creating QuantizationScheme...")
+        weights = QuantizationArgs(
+            num_bits=4,
+            group_size=128,
+            symmetric=False,
+            strategy=QuantizationStrategy.GROUP,
+            type=QuantizationType.INT,
+            observer="minmax",
+            dynamic=False,
+        )
+        scheme = QuantizationScheme(
+            targets=["Linear"],
+            weights=weights,
+            input_activations=None,
+            output_activations=None,
+            format="pack-quantized",
+        )
+        config_groups = {"group_0": scheme}
+        print("  ✅ QuantizationScheme created")
         
         # Create AWQModifier
         print("  → Creating AWQModifier...")
-        modifier = AWQModifier(quantization_config=quant_config)
+        modifier = AWQModifier(config_groups=config_groups, ignore=["lm_head"])
         print("  ✅ AWQModifier created successfully")
         
         return True
@@ -193,10 +209,15 @@ def test_configuration():
         }
         
         AWQ_CONFIG = {
-            "w_bit": 4,
-            "q_group_size": 128,
+            "num_bits": 4,
+            "group_size": 128,
             "zero_point": True,
-            "version": "GEMM",
+            "strategy": "group",
+            "targets": ["Linear"],
+            "ignore": ["lm_head"],
+            "format": "pack-quantized",
+            "observer": "minmax",
+            "dynamic": False,
         }
         
         print(f"  ✅ Configuration structure valid")
@@ -254,4 +275,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
