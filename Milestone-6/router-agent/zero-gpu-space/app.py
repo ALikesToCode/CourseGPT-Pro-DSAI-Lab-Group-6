@@ -14,17 +14,14 @@ from threading import Thread
 # Enable optimizations
 torch.backends.cuda.matmul.allow_tf32 = True
 
-# Ensure CUDA is visible to vLLM on ZeroGPU
-# vLLM needs explicit CUDA device configuration
-# ZeroGPU uses MIG UUIDs, but vLLM needs numeric device index
+# ZeroGPU often exposes MIG UUIDs; keep them unless the variable is empty
 if torch.cuda.is_available():
-    # Set CUDA_VISIBLE_DEVICES if not already set or if it's a MIG UUID
     cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-    if not cuda_visible or not cuda_visible.isdigit():
-        # If CUDA_VISIBLE_DEVICES is a MIG UUID or empty, use "0" for single GPU
+    if not cuda_visible:
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        cuda_visible = "0"
     print(f"CUDA detected: {torch.cuda.get_device_name(0)}")
-    print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
+    print(f"CUDA_VISIBLE_DEVICES: {cuda_visible or os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
 else:
     print("WARNING: CUDA not available - vLLM will not work")
 
@@ -213,32 +210,31 @@ def load_vllm_model(model_name: str):
         }
         
         # Ensure CUDA_VISIBLE_DEVICES is set correctly for vLLM device detection
-        # ZeroGPU uses MIG UUIDs, but vLLM needs numeric device index
-        # IMPORTANT: Set this BEFORE creating LLM() instance, as vLLM checks device during init
-        # Also need to ensure torch sees the change immediately
+        # ZeroGPU exposes MIG UUIDs; keep them unless the variable is empty
         cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-        if not cuda_visible or not cuda_visible.isdigit():
-            # If CUDA_VISIBLE_DEVICES is a MIG UUID or empty, use "0" for single GPU
+        if not cuda_visible:
             os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-            print(f"  → Set CUDA_VISIBLE_DEVICES=0 (was: {cuda_visible})")
-            # Force torch to reinitialize CUDA context after changing CUDA_VISIBLE_DEVICES
-            # This ensures vLLM sees the correct device
+            cuda_visible = "0"
+            print("  → CUDA_VISIBLE_DEVICES was empty, set to 0")
             try:
                 if hasattr(torch.cuda, '_lazy_init'):
                     torch.cuda._lazy_init()
             except Exception:
                 pass
-        
-        # Force torch to see the correct device after setting CUDA_VISIBLE_DEVICES
-        # This ensures vLLM's device detection works correctly
+        else:
+            print(f"  → CUDA_VISIBLE_DEVICES retained: {cuda_visible}")
+
+        # Force torch to see the correct device after ensuring CUDA_VISIBLE_DEVICES
         if torch.cuda.is_available():
-            # Verify device is accessible
             device_name = torch.cuda.get_device_name(0)
             print(f"  → Verified CUDA device accessible: {device_name}")
-            # Explicitly set default device to ensure vLLM can detect it
             torch.cuda.set_device(0)
-            print(f"  → Set torch.cuda default device to 0")
-        
+            print("  → Set torch.cuda default device to 0")
+
+        # Disable Ray executor on ZeroGPU to simplify device handling
+        os.environ.setdefault("VLLM_USE_RAY", "0")
+        os.environ.setdefault("VLLM_WORKER_USE_RAY", "0")
+
         # Add quantization if specified (vLLM auto-detects AWQ via llm-compressor)
         if quantization == "awq":
             llm_kwargs["quantization"] = "awq"
@@ -265,6 +261,9 @@ def load_vllm_model(model_name: str):
             except Exception:
                 print(f"  → FP8 quantization not available, falling back to bf16")
         
+        # Explicitly select CUDA device and single-process executor
+        llm_kwargs["device"] = "cuda" if torch.cuda.is_available() else "cpu"
+
         print(f"  → Loading with vLLM (continuous batching, PagedAttention)...")
         llm = LLM(**llm_kwargs)
         VLLM_MODELS[model_name] = llm
