@@ -73,18 +73,20 @@ def _prefetch_repo(repo_id: str) -> None:
         print(f"Prefetch skipped for {repo_id}: {exc}")
 
 
-def _start_prefetch_workers():
+def _start_prefetch_workers(model_names: list[str]):
     global PREFETCH_EXECUTOR
     if PREFETCH_DISABLED or not HF_HUB_AVAILABLE:
         return
     if PREFETCH_EXECUTOR is not None:
         return
-    worker_count = max(1, min(PREFETCH_THREADS, len(MODELS) * 2))
+    if not model_names:
+        return
+    worker_count = max(1, min(PREFETCH_THREADS, len(model_names) * 2))
     PREFETCH_EXECUTOR = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="prefetch")
     submitted = set()
-    for model_name, cfg in MODELS.items():
-        repos = {cfg["repo_id"]}
-        tokenizer_repo = cfg.get("tokenizer_repo")
+    for model_name in model_names:
+        repos = {MODELS[model_name]["repo_id"]}
+        tokenizer_repo = MODELS[model_name].get("tokenizer_repo")
         if tokenizer_repo:
             repos.add(tokenizer_repo)
         for repo in repos:
@@ -95,13 +97,6 @@ def _start_prefetch_workers():
 
 
 MODELS = {
-    "Router-Qwen3-32B-AWQ": {
-        "repo_id": "Alovestocode/router-qwen3-32b-merged-awq",  # AWQ quantized model
-        "tokenizer_repo": "Alovestocode/router-qwen3-32b-merged",  # Tokenizer from original repo
-        "description": "Router checkpoint on Qwen3 32B merged, optimized with AWQ quantization via vLLM.",
-        "params_b": 32.0,
-        "quantization": "awq",  # vLLM will auto-detect AWQ
-    },
     "Router-Gemma3-27B-AWQ": {
         "repo_id": "Alovestocode/router-gemma3-merged-awq",  # AWQ quantized model
         "tokenizer_repo": "Alovestocode/router-gemma3-merged",  # Tokenizer from original repo
@@ -109,9 +104,38 @@ MODELS = {
         "params_b": 27.0,
         "quantization": "awq",  # vLLM will auto-detect AWQ
     },
+    "Router-Qwen3-32B-AWQ": {
+        "repo_id": "Alovestocode/router-qwen3-32b-merged-awq",  # AWQ quantized model
+        "tokenizer_repo": "Alovestocode/router-qwen3-32b-merged",  # Tokenizer from original repo
+        "description": "Router checkpoint on Qwen3 32B merged, optimized with AWQ quantization via vLLM.",
+        "params_b": 32.0,
+        "quantization": "awq",  # vLLM will auto-detect AWQ
+    },
 }
 
-_start_prefetch_workers()
+DEFAULT_MODEL = os.environ.get("DEFAULT_ROUTER_MODEL", "Router-Gemma3-27B-AWQ")
+if DEFAULT_MODEL not in MODELS:
+    DEFAULT_MODEL = next(iter(MODELS)) if MODELS else None
+
+
+def _resolve_prefetch_model_names(include_default: bool) -> list[str]:
+    entries = os.environ.get("ROUTER_PREFETCH_MODELS")
+    if entries:
+        names = [item.strip() for item in entries.split(",") if item.strip()]
+    else:
+        single = os.environ.get("ROUTER_PREFETCH_MODEL")
+        names = [single] if single else []
+
+    if names == ["ALL"] or names == ["all"]:
+        names = list(MODELS.keys())
+
+    valid = [name for name in names if name in MODELS]
+    if not valid and include_default and DEFAULT_MODEL:
+        valid = [DEFAULT_MODEL]
+    return valid
+
+
+_start_prefetch_workers(_resolve_prefetch_model_names(include_default=True))
 
 # Try to import LLM Compressor (for quantization - optional, vLLM has native AWQ support)
 # Note: llm-compressor is only needed for quantizing models, not for loading pre-quantized AWQ models
@@ -1070,7 +1094,7 @@ def build_ui():
                 model_choice = gr.Dropdown(
                     label="Router Checkpoint",
                     choices=list(MODELS.keys()),
-                    value=list(MODELS.keys())[0] if MODELS else None,
+                    value=DEFAULT_MODEL,
                     allow_custom_value=False,
                 )
                 difficulty = gr.Radio(
@@ -1130,16 +1154,7 @@ def build_ui():
 
 
 def _prefetch_from_env() -> None:
-    entries = os.environ.get("ROUTER_PREFETCH_MODELS")
-    if entries:
-        names = [item.strip() for item in entries.split(",") if item.strip()]
-    else:
-        single = os.environ.get("ROUTER_PREFETCH_MODEL")
-        names = [single] if single else []
-
-    if names == ["ALL"] or names == ["all"]:
-        names = list(MODELS.keys())
-
+    names = _resolve_prefetch_model_names(include_default=False)
     for name in names:
         if name not in MODELS:
             print(f"Prefetch skipped, unknown model: {name}")
