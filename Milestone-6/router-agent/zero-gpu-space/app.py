@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 import gradio as gr
 import spaces
@@ -57,6 +57,8 @@ PREFETCH_DISABLED = os.environ.get("DISABLE_PREFETCH", "0") == "1"
 PREFETCH_THREADS = int(os.environ.get("PREFETCH_THREADS", "4"))
 PREFETCH_EXECUTOR = None
 
+LOCAL_REPO_CACHE: Dict[str, str] = {}
+
 
 def _prefetch_repo(repo_id: str) -> None:
     if not HF_HUB_AVAILABLE:
@@ -71,6 +73,26 @@ def _prefetch_repo(repo_id: str) -> None:
         print(f"Prefetched repo: {repo_id}")
     except Exception as exc:  # pragma: no cover
         print(f"Prefetch skipped for {repo_id}: {exc}")
+
+
+def _ensure_local_repo(repo_id: str) -> Optional[str]:
+    if not HF_HUB_AVAILABLE:
+        return None
+    cached = LOCAL_REPO_CACHE.get(repo_id)
+    if cached and os.path.isdir(cached):
+        return cached
+    try:
+        local_path = snapshot_download(
+            repo_id=repo_id,
+            etag_timeout=10,
+            resume_download=True,
+            local_files_only=False,
+        )
+        LOCAL_REPO_CACHE[repo_id] = local_path
+        return local_path
+    except Exception as exc:  # pragma: no cover
+        print(f"Local snapshot failed for {repo_id}: {exc}")
+        return None
 
 
 def _start_prefetch_workers(model_names: list[str]):
@@ -255,13 +277,16 @@ def load_vllm_model(model_name: str):
     quantization = model_config.get("quantization", None)
     
     # For AWQ models, vLLM should point to repo root (not default/ subfolder)
-    # vLLM will find quantization_config.json at root, which points to default/ subfolder
-    # The quantization_config.json tells vLLM where the actual model files are
+    # If repo is stored with AWQ artifacts inside a default/ directory, fall back to local snapshot
     if quantization == "awq":
-        # Point to repo root - vLLM will auto-detect AWQ via quantization_config.json
-        # The config file at root tells vLLM the model files are in default/ subfolder
-        model_path = repo  # Use repo root, not repo/default
-        print(f"Loading {model_path} with vLLM (AWQ quantization, vLLM will find files in default/ via quantization_config.json)...")
+        model_path = repo
+        local_repo = _ensure_local_repo(repo)
+        if local_repo:
+            default_dir = os.path.join(local_repo, "default")
+            model_path = default_dir if os.path.isdir(default_dir) else local_repo
+            print(f"Loading {model_path} (local snapshot) with vLLM (AWQ quantization)...")
+        else:
+            print(f"Loading {model_path} with vLLM (AWQ quantization, vLLM will find files in default/ via quantization_config.json)...")
     else:
         model_path = repo
         print(f"Loading {model_path} with vLLM (quantization: {quantization})...")
