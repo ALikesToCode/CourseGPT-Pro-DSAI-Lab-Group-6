@@ -15,11 +15,15 @@ from threading import Thread
 torch.backends.cuda.matmul.allow_tf32 = True
 
 # ZeroGPU often exposes MIG UUIDs; keep them unless the variable is empty
+MIG_VISIBLE = False
 if torch.cuda.is_available():
     cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
     if not cuda_visible:
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         cuda_visible = "0"
+        print("CUDA_VISIBLE_DEVICES was empty -> set to 0")
+    elif cuda_visible.startswith("MIG"):
+        MIG_VISIBLE = True
     print(f"CUDA detected: {torch.cuda.get_device_name(0)}")
     print(f"CUDA_VISIBLE_DEVICES: {cuda_visible or os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
 else:
@@ -35,6 +39,9 @@ except ImportError:
     LLM = None
     SamplingParams = None
     print("Warning: vLLM not available, falling back to Transformers")
+
+# Optional flag to disable vLLM (defaults to true on MIG due to device detection instability)
+DISABLE_VLLM = os.environ.get("DISABLE_VLLM", "1" if MIG_VISIBLE else "0") == "1"
 
 # Try to import LLM Compressor (for quantization - optional, vLLM has native AWQ support)
 # Note: llm-compressor is only needed for quantizing models, not for loading pre-quantized AWQ models
@@ -329,7 +336,7 @@ def load_pipeline(model_name: str):
     """
     # Try vLLM first (best performance with native AWQ support via llm-compressor)
     # vLLM handles AWQ natively, so AutoAWQ deprecation doesn't affect us
-    if VLLM_AVAILABLE:
+    if VLLM_AVAILABLE and not DISABLE_VLLM:
         try:
             print(f"🔄 Attempting to load {model_name} with vLLM (native AWQ support)...")
             return load_vllm_model(model_name)
@@ -343,6 +350,9 @@ def load_pipeline(model_name: str):
     if model_name in PIPELINES:
         print(f"✅ Using cached Transformers pipeline for {model_name}")
         return PIPELINES[model_name]
+
+    if DISABLE_VLLM and VLLM_AVAILABLE:
+        print("⚠️ vLLM disabled for this deployment (DISABLE_VLLM=1 or MIG device detected)")
 
     model_config = MODELS[model_name]
     repo = model_config["repo_id"]
