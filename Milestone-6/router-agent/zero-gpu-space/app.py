@@ -261,9 +261,8 @@ def load_vllm_model(model_name: str):
             except Exception:
                 print(f"  → FP8 quantization not available, falling back to bf16")
         
-        # Explicitly select CUDA device and single-process executor
-        llm_kwargs["device"] = "cuda" if torch.cuda.is_available() else "cpu"
-
+        # vLLM will now detect the CUDA device via torch / environment settings above
+        
         print(f"  → Loading with vLLM (continuous batching, PagedAttention)...")
         llm = LLM(**llm_kwargs)
         VLLM_MODELS[model_name] = llm
