@@ -94,6 +94,23 @@ def _start_prefetch_workers():
             PREFETCH_EXECUTOR.submit(_prefetch_repo, repo)
 
 
+MODELS = {
+    "Router-Qwen3-32B-AWQ": {
+        "repo_id": "Alovestocode/router-qwen3-32b-merged-awq",  # AWQ quantized model
+        "tokenizer_repo": "Alovestocode/router-qwen3-32b-merged",  # Tokenizer from original repo
+        "description": "Router checkpoint on Qwen3 32B merged, optimized with AWQ quantization via vLLM.",
+        "params_b": 32.0,
+        "quantization": "awq",  # vLLM will auto-detect AWQ
+    },
+    "Router-Gemma3-27B-AWQ": {
+        "repo_id": "Alovestocode/router-gemma3-merged-awq",  # AWQ quantized model
+        "tokenizer_repo": "Alovestocode/router-gemma3-merged",  # Tokenizer from original repo
+        "description": "Router checkpoint on Gemma3 27B merged, optimized with AWQ quantization via vLLM.",
+        "params_b": 27.0,
+        "quantization": "awq",  # vLLM will auto-detect AWQ
+    },
+}
+
 _start_prefetch_workers()
 
 # Try to import LLM Compressor (for quantization - optional, vLLM has native AWQ support)
@@ -162,23 +179,6 @@ PLAN_END_TOKEN = "<|end_of_plan|>"
 STOP_SEQUENCES = [PLAN_END_TOKEN, "</json>", "</JSON>"]
 
 ROUTER_SYSTEM_PROMPT = """You are the Router Agent coordinating Math, Code, and General-Search specialists.\nEmit EXACTLY ONE strict JSON object with keys route_plan, route_rationale, expected_artifacts,\nthinking_outline, handoff_plan, todo_list, difficulty, tags, acceptance_criteria, metrics.\nRules:\n- No markdown/code fences, no natural-language prologues or epilogues.\n- route_plan must be an ordered list of tool invocations such as /math(...), /code(...), /general-search(...).\n- todo_list must map each checklist item to the responsible tool.\n- metrics must include primary and secondary arrays (add optional *_guidance fields when they exist).\n- After the closing brace of the JSON object, immediately append the sentinel <|end_of_plan|>.\nExample output:\n{\n  "route_plan": ["/general-search(...)"],\n  "route_rationale": "...",\n  ...\n}<|end_of_plan|>\nReturn nothing else."""
-
-MODELS = {
-    "Router-Qwen3-32B-AWQ": {
-        "repo_id": "Alovestocode/router-qwen3-32b-merged-awq",  # AWQ quantized model
-        "tokenizer_repo": "Alovestocode/router-qwen3-32b-merged",  # Tokenizer from original repo
-        "description": "Router checkpoint on Qwen3 32B merged, optimized with AWQ quantization via vLLM.",
-        "params_b": 32.0,
-        "quantization": "awq",  # vLLM will auto-detect AWQ
-    },
-    "Router-Gemma3-27B-AWQ": {
-        "repo_id": "Alovestocode/router-gemma3-merged-awq",  # AWQ quantized model
-        "tokenizer_repo": "Alovestocode/router-gemma3-merged",  # Tokenizer from original repo
-        "description": "Router checkpoint on Gemma3 27B merged, optimized with AWQ quantization via vLLM.",
-        "params_b": 27.0,
-        "quantization": "awq",  # vLLM will auto-detect AWQ
-    },
-}
 
 REQUIRED_KEYS = [
     "route_plan",
