@@ -10,6 +10,13 @@ import spaces
 import torch
 from transformers import AutoTokenizer, TextIteratorStreamer, pipeline
 from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
+
+try:
+    from huggingface_hub import snapshot_download
+    HF_HUB_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    HF_HUB_AVAILABLE = False
 
 # Enable optimizations
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -42,6 +49,52 @@ except ImportError:
 
 # Optional flag to disable vLLM (defaults to true on MIG due to device detection instability)
 DISABLE_VLLM = os.environ.get("DISABLE_VLLM", "1" if MIG_VISIBLE else "0") == "1"
+
+# ---------------------------------------------------------------------------
+# Parallel prefetch of model weights/tokenizers to reduce first-load latency
+# ---------------------------------------------------------------------------
+PREFETCH_DISABLED = os.environ.get("DISABLE_PREFETCH", "0") == "1"
+PREFETCH_THREADS = int(os.environ.get("PREFETCH_THREADS", "4"))
+PREFETCH_EXECUTOR = None
+
+
+def _prefetch_repo(repo_id: str) -> None:
+    if not HF_HUB_AVAILABLE:
+        return
+    try:
+        snapshot_download(
+            repo_id=repo_id,
+            etag_timeout=10,
+            resume_download=True,
+            local_files_only=False,
+        )
+        print(f"Prefetched repo: {repo_id}")
+    except Exception as exc:  # pragma: no cover
+        print(f"Prefetch skipped for {repo_id}: {exc}")
+
+
+def _start_prefetch_workers():
+    global PREFETCH_EXECUTOR
+    if PREFETCH_DISABLED or not HF_HUB_AVAILABLE:
+        return
+    if PREFETCH_EXECUTOR is not None:
+        return
+    worker_count = max(1, min(PREFETCH_THREADS, len(MODELS) * 2))
+    PREFETCH_EXECUTOR = ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="prefetch")
+    submitted = set()
+    for model_name, cfg in MODELS.items():
+        repos = {cfg["repo_id"]}
+        tokenizer_repo = cfg.get("tokenizer_repo")
+        if tokenizer_repo:
+            repos.add(tokenizer_repo)
+        for repo in repos:
+            if repo in submitted:
+                continue
+            submitted.add(repo)
+            PREFETCH_EXECUTOR.submit(_prefetch_repo, repo)
+
+
+_start_prefetch_workers()
 
 # Try to import LLM Compressor (for quantization - optional, vLLM has native AWQ support)
 # Note: llm-compressor is only needed for quantizing models, not for loading pre-quantized AWQ models
