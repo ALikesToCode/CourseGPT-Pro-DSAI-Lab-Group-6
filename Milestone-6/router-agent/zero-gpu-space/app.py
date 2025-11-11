@@ -224,7 +224,6 @@ def load_vllm_model(model_name: str):
             # Force torch to reinitialize CUDA context after changing CUDA_VISIBLE_DEVICES
             # This ensures vLLM sees the correct device
             try:
-                import torch
                 if hasattr(torch.cuda, '_lazy_init'):
                     torch.cuda._lazy_init()
             except Exception:
@@ -232,7 +231,6 @@ def load_vllm_model(model_name: str):
         
         # Force torch to see the correct device after setting CUDA_VISIBLE_DEVICES
         # This ensures vLLM's device detection works correctly
-        import torch
         if torch.cuda.is_available():
             # Verify device is accessible
             device_name = torch.cuda.get_device_name(0)
