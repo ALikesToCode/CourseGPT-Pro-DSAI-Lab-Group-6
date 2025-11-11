@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
+import threading
+from itertools import islice
 from typing import Any, Dict, List, Tuple, Optional
 
 import gradio as gr
 import spaces
 import torch
-from transformers import AutoTokenizer, TextIteratorStreamer, pipeline
+from transformers import (
+    AutoTokenizer,
+    TextIteratorStreamer,
+    pipeline,
+    StoppingCriteria,
+    StoppingCriteriaList,
+)
 from threading import Thread
 from concurrent.futures import ThreadPoolExecutor
 
@@ -17,6 +26,13 @@ try:
     HF_HUB_AVAILABLE = True
 except ImportError:  # pragma: no cover
     HF_HUB_AVAILABLE = False
+
+try:
+    from ddgs import DDGS
+
+    DDGS_AVAILABLE = True
+except ImportError:
+    DDGS_AVAILABLE = False
 
 # Enable optimizations
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -46,6 +62,8 @@ except ImportError:
     LLM = None
     SamplingParams = None
     print("Warning: vLLM not available, falling back to Transformers")
+
+cancel_event = threading.Event()
 
 # Optional flag to disable vLLM (defaults to true on MIG due to device detection instability)
 DISABLE_VLLM = os.environ.get("DISABLE_VLLM", "1" if MIG_VISIBLE else "0") == "1"
@@ -93,6 +111,88 @@ def _ensure_local_repo(repo_id: str) -> Optional[str]:
     except Exception as exc:  # pragma: no cover
         print(f"Local snapshot failed for {repo_id}: {exc}")
         return None
+
+
+def _retrieve_search_results(query: str, max_results: int, max_chars: int) -> List[str]:
+    if not DDGS_AVAILABLE:
+        return []
+    results: List[str] = []
+    try:
+        with DDGS() as ddgs:
+            for idx, item in enumerate(
+                islice(
+                    ddgs.text(
+                        query,
+                        region="wt-wt",
+                        safesearch="moderate",
+                        timelimit="y",
+                    ),
+                    max_results,
+                )
+            ):
+                title = (item.get("title") or "Untitled").strip()
+                body = (item.get("body") or "").strip()
+                url = (item.get("href") or "").strip()
+                snippet = body[: max_chars].replace("\n", " ")
+                formatted = f"[{idx+1}] {title} — {snippet}"
+                if url:
+                    formatted += f" ({url})"
+                results.append(formatted)
+    except Exception as exc:  # pragma: no cover
+        print(f"[DEBUG] DDG search failed: {exc}")
+    return results
+
+
+class CancelStoppingCriteria(StoppingCriteria):
+    def __call__(self, input_ids, scores, **kwargs) -> bool:
+        return cancel_event.is_set()
+
+
+def estimate_gpu_seconds(
+    model_name: str,
+    max_new_tokens: int,
+    enable_search: bool,
+) -> float:
+    params_b = MODELS.get(model_name, {}).get("params_b", 4.0)
+    base = 12.0 + params_b * 3.0
+    tokens_per_sec = max(40.0, 320.0 / (1.0 + params_b / 6.0))
+    generation_time = max_new_tokens / tokens_per_sec
+    search_time = 8.0 if enable_search else 0.0
+    return base + generation_time + search_time
+
+
+def format_gpu_estimate_message(
+    model_name: str,
+    max_new_tokens: int,
+    enable_search: bool,
+) -> Tuple[str, int]:
+    est_seconds = estimate_gpu_seconds(model_name, max_new_tokens, enable_search)
+    rounded = int(math.ceil(est_seconds))
+    recommended = int(math.ceil(max(60, rounded) / 60.0) * 60)
+    recommended = max(60, min(1800, recommended))
+    model_size = MODELS.get(model_name, {}).get("params_b", 4.0)
+    message = (
+        f"⏱️ **Estimated GPU Time:** ~{rounded} seconds\n\n"
+        f"📊 **Model Size:** {model_size:.1f}B parameters\n"
+        f"🔍 **Web Search:** {'Enabled' if enable_search else 'Disabled'}\n"
+        f"✅ **Suggested GPU Duration slider:** {recommended} seconds"
+    )
+    return message, recommended
+
+
+def update_gpu_controls(
+    model_name: str,
+    max_new_tokens: int,
+    enable_search: bool,
+    current_duration: int,
+):
+    message, recommended = format_gpu_estimate_message(
+        model_name,
+        max_new_tokens,
+        enable_search,
+    )
+    updated_value = current_duration if current_duration >= recommended else recommended
+    return message, gr.update(value=updated_value)
 
 
 def _start_prefetch_workers(model_names: list[str]):
@@ -793,6 +893,10 @@ def _generate_router_plan_streaming_internal(
     temperature: float,
     top_p: float,
     gpu_duration: int,
+    enable_search: bool,
+    search_max_results: int,
+    search_max_chars: int,
+    search_timeout: float,
 ):
     """Internal generator function for streaming token output."""
     if not user_task.strip():
@@ -803,10 +907,49 @@ def _generate_router_plan_streaming_internal(
         yield "", {}, f"❌ Invalid model choice: {model_choice}. Available: {list(MODELS.keys())}", ""
         return
 
+    cancel_event.clear()
+    cancelled = False
     try:
+        search_snippets: List[str] = []
+        if enable_search and DDGS_AVAILABLE and user_task.strip():
+            search_snippets_holder: List[str] = []
+            search_error: Optional[Exception] = None
+
+            def _fetch_search():
+                nonlocal search_error
+                try:
+                    results = _retrieve_search_results(
+                        user_task,
+                        max(1, int(search_max_results)),
+                        max(30, int(search_max_chars)),
+                    )
+                    search_snippets_holder.extend(results)
+                except Exception as exc:  # pragma: no cover
+                    search_error = exc
+
+            search_thread = Thread(target=_fetch_search, daemon=True)
+            search_thread.start()
+            search_thread.join(timeout=float(max(0.5, search_timeout)))
+            if search_thread.is_alive():
+                print("[DEBUG] Search thread timed out; continuing without results.")
+            if search_error:
+                print(f"[DEBUG] Search error: {search_error}")
+            search_snippets = search_snippets_holder
+
+        context_for_prompt = context
+        if search_snippets:
+            search_block = "\n".join(f"- {snippet}" for snippet in search_snippets)
+            addendum = (
+                "\n\n# Web Search Findings\n"
+                "Use the following snippets as supplementary evidence. "
+                "Cite them as needed in the generated plan.\n"
+                f"{search_block}"
+            )
+            context_for_prompt = (context_for_prompt or "").rstrip() + addendum
+
         prompt = build_router_prompt(
             user_task=user_task,
-            context=context,
+            context=context_for_prompt,
             acceptance=acceptance,
             extra_guidance=extra_guidance,
             difficulty=difficulty,
@@ -844,6 +987,14 @@ def _generate_router_plan_streaming_internal(
             
             prev_text_len = 0
             for request_output in stream:
+                if cancel_event.is_set():
+                    cancelled = True
+                    try:
+                        if hasattr(generator, "abort_request"):
+                            generator.abort_request(request_output.request_id)
+                    except Exception:
+                        pass
+                    break
                 if not request_output.outputs:
                     continue
                 
@@ -909,6 +1060,7 @@ def _generate_router_plan_streaming_internal(
                 "streamer": streamer,
                 "eos_token_id": tokenizer.eos_token_id,
                 "pad_token_id": tokenizer.pad_token_id or tokenizer.eos_token_id,
+                "stopping_criteria": StoppingCriteriaList([CancelStoppingCriteria()]),
             }
 
             generation_error = None
@@ -937,6 +1089,9 @@ def _generate_router_plan_streaming_internal(
             
             try:
                 for new_text in streamer:
+                    if cancel_event.is_set():
+                        cancelled = True
+                        break
                     if generation_error:
                         raise generation_error
                     
@@ -988,7 +1143,9 @@ def _generate_router_plan_streaming_internal(
         completion = trim_at_stop_sequences(completion.strip())[0]
         print(f"[DEBUG] Final completion length: {len(completion)}")
         
-        if not completion:
+        if cancelled:
+            validation_msg = "⏹️ Generation cancelled by user."
+        elif not completion:
             print("[DEBUG] WARNING: Completion is empty - model may not have generated output")
             validation_msg = "⚠️ Model generated empty output. Check GPU allocation and model loading."
         elif parsed_plan is None:
@@ -1033,11 +1190,19 @@ def _make_gpu_wrapper(duration: int):
         temperature: float,
         top_p: float,
         gpu_duration: int,
+        enable_search: bool,
+        search_max_results: int,
+        search_max_chars: int,
+        search_timeout: float,
     ):
         yield from _generate_router_plan_streaming_internal(
             user_task, context, acceptance, extra_guidance,
             difficulty, tags, model_choice, max_new_tokens,
-            temperature, top_p, duration
+            temperature, top_p, duration,
+            enable_search,
+            search_max_results,
+            search_max_chars,
+            search_timeout,
         )
     return wrapper
 
@@ -1058,6 +1223,10 @@ def generate_router_plan_streaming(
     temperature: float,
     top_p: float,
     gpu_duration: int = 600,
+    enable_search: bool = False,
+    search_max_results: int = 4,
+    search_max_chars: int = 120,
+    search_timeout: float = 5.0,
 ):
     """
     Generate router plan with streaming output.
@@ -1073,7 +1242,11 @@ def generate_router_plan_streaming(
     yield from wrapper(
         user_task, context, acceptance, extra_guidance,
         difficulty, tags, model_choice, max_new_tokens,
-        temperature, top_p, rounded_duration
+        temperature, top_p, rounded_duration,
+        enable_search,
+        int(search_max_results),
+        int(search_max_chars),
+        float(search_timeout),
     )
 
 
@@ -1081,8 +1254,18 @@ def clear_outputs():
     return "", {}, "Awaiting generation.", ""
 
 
+def cancel_generation():
+    cancel_event.set()
+    return "⏹️ Cancel request sent. Finishing current step..."
+
+
 def build_ui():
     description = "Use the CourseGPT-Pro router checkpoints (Gemma3/Qwen3) hosted on ZeroGPU to generate structured routing plans."
+    initial_estimate_text, initial_recommended_duration = format_gpu_estimate_message(
+        DEFAULT_MODEL,
+        16000,
+        False,
+    )
     with gr.Blocks(theme=gr.themes.Soft(), css="""
         textarea { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
         .status-ok { color: #0d9488; font-weight: 600; }
@@ -1136,11 +1319,54 @@ def build_ui():
                 max_new_tokens = gr.Slider(256, 20000, value=16000, step=32, label="Max New Tokens")
                 temperature = gr.Slider(0.0, 1.5, value=0.2, step=0.05, label="Temperature")
                 top_p = gr.Slider(0.1, 1.0, value=0.9, step=0.05, label="Top-p")
-                gpu_duration = gr.Slider(60, 1800, value=600, step=60, label="GPU Duration (seconds)", info="Maximum GPU time allocation for this request")
+                enable_search = gr.Checkbox(
+                    label="Enable DuckDuckGo Web Search",
+                    value=False,
+                    interactive=DDGS_AVAILABLE,
+                    info="Augment context with live snippets." if DDGS_AVAILABLE else "Install 'ddgs' package to enable search.",
+                )
+                with gr.Accordion("Web Search Settings", open=False, visible=DDGS_AVAILABLE) as search_settings:
+                    search_max_results = gr.Slider(
+                        minimum=1,
+                        maximum=10,
+                        value=4,
+                        step=1,
+                        label="Search Results",
+                        interactive=DDGS_AVAILABLE,
+                    )
+                    search_max_chars = gr.Slider(
+                        minimum=50,
+                        maximum=400,
+                        value=160,
+                        step=10,
+                        label="Max Characters per Result",
+                        interactive=DDGS_AVAILABLE,
+                    )
+                    search_timeout = gr.Slider(
+                        minimum=1.0,
+                        maximum=20.0,
+                        value=5.0,
+                        step=0.5,
+                        label="Search Timeout (seconds)",
+                        interactive=DDGS_AVAILABLE,
+                    )
+                gpu_estimate_display = gr.Markdown(
+                    value=initial_estimate_text,
+                    elem_classes="status-ok",
+                )
+                gpu_duration = gr.Slider(
+                    60,
+                    1800,
+                    value=initial_recommended_duration,
+                    step=60,
+                    label="GPU Duration (seconds)",
+                    info="Maximum GPU time allocation for this request",
+                )
 
         with gr.Row():
             generate_btn = gr.Button("Generate Router Plan", variant="primary", scale=1)
             clear_btn = gr.Button("Clear", variant="secondary", scale=1)
+            cancel_btn = gr.Button("Cancel", variant="stop", scale=1)
 
         with gr.Row():
             raw_output = gr.Textbox(label="Raw Model Output", lines=12)
@@ -1162,6 +1388,10 @@ def build_ui():
                 temperature,
                 top_p,
                 gpu_duration,
+                enable_search,
+                search_max_results,
+                search_max_chars,
+                search_timeout,
             ],
             outputs=[raw_output, plan_json, validation_msg, prompt_view],
             show_progress="full",
@@ -1172,6 +1402,27 @@ def build_ui():
             fn=clear_outputs,
             outputs=[raw_output, plan_json, validation_msg, prompt_view],
             api_name="/clear_outputs",
+        )
+
+        cancel_btn.click(
+            fn=cancel_generation,
+            outputs=[validation_msg],
+        )
+
+        model_choice.change(
+            fn=update_gpu_controls,
+            inputs=[model_choice, max_new_tokens, enable_search, gpu_duration],
+            outputs=[gpu_estimate_display, gpu_duration],
+        )
+        max_new_tokens.change(
+            fn=update_gpu_controls,
+            inputs=[model_choice, max_new_tokens, enable_search, gpu_duration],
+            outputs=[gpu_estimate_display, gpu_duration],
+        )
+        enable_search.change(
+            fn=update_gpu_controls,
+            inputs=[model_choice, max_new_tokens, enable_search, gpu_duration],
+            outputs=[gpu_estimate_display, gpu_duration],
         )
 
     return demo
