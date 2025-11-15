@@ -1,0 +1,53 @@
+# ============================================================
+#  COURSEGPT — FINAL CONFIG TO ALLOW FULL CUSTOM THEMING
+# ============================================================
+
+# --------------------------
+# Disable Streamlit’s Theme
+# --------------------------
+# Force Streamlit to always use its LIGHT base theme.
+# This prevents OS-based dark mode auto switching.
+# Your UI will control all theming via CSS + JS.
+[theme]
+base = "light"
+primaryColor = "#3B82F6"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#000000"
+
+# Prevent dark widgets overriding your card/chat styles
+font = "sans serif"
+
+# -----------------------------------------
+# Client UI Behavior (Optional, Recommended)
+# -----------------------------------------
+[client]
+# Removes Streamlit’s top toolbar ("Running... • Stop")
+toolbarMode = "minimal"
+
+# Prevents Streamlit from auto-switching theme from OS
+showErrorDetails = true
+
+# -----------------------------------------
+# Server Settings
+# -----------------------------------------
+[server]
+# Improve local dev behavior
+enableCORS = false
+enableXsrfProtection = false
+headless = true
+
+# Expose on network (useful for mobile testing)
+address = "0.0.0.0"
+enableWebsocketCompression = true
+
+# -----------------------------------------
+# Browser Settings
+# -----------------------------------------
+[browser]
+# Prevent telemetry and usage stats
+gatherUsageStats = false
+
+# Allows testing in iframes / local network
+serverAddress = "localhost"
+serverPort = 8501
