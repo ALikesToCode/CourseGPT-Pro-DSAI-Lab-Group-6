@@ -1,322 +1,186 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# =====================================================================
-#  NOTION-LIKE THEME (LIGHT + DARK)
-# =====================================================================
-
+# Minimal Notion-like styles: only layout, vars, cards, and bubbles.
 BASE_CSS = r"""
-:root {
-  --accent: #5763D8;
-
-  /* Light */
-  --bg-light: #F7F7F5;
-  --panel-light: #FAFAF8;
+:root{
+  --bg-light: #FAFAFB;
+  --bg-dark: #0F1115;
   --card-light: #FFFFFF;
-  --border-light: #E5E5E3;
-  --text-light: #1C1C1C;
-  --text-muted-light: #6F6F6F;
-
-  /* Dark */
-  --bg-dark: #0F1012;
-  --panel-dark: #1A1C1F;
-  --card-dark: #1F2124;
-  --border-dark: #2D2F33;
-  --text-dark: #EAEAEA;
-  --text-muted-dark: #A8A8A8;
-
-  --radius: 8px;
-  --shadow-light: 0px 2px 6px rgba(0, 0, 0, 0.06);
-  --shadow-dark: 0px 2px 10px rgba(0, 0, 0, 0.4);
-
-  --app-max-width: 1080px;
+  --card-dark: #0F1318;
+  --muted: #6B7280;
+  --accent: #5763D8;
+  --radius: 10px;
+  --container-width: 1080px;
 }
 
-/* Topbar button sizing and utility tokens */
-:root {
-  --nav-btn-padding: 8px 16px;
-  --nav-btn-radius: 10px;
+html, body, .stApp { background: var(--bg-light); color: #0B1220; font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto; }
+.block-container{ max-width: var(--container-width) !important; margin: 0 auto !important; padding: 18px !important; }
+
+.cg-topbar{ display:flex; align-items:center; gap:18px; padding:8px 0; margin-bottom:16px; }
+.cg-logo{ font-weight:600; color:var(--accent); }
+
+/* Visual polish */
+.cg-topbar{ padding:14px 6px; align-items:center; justify-content:space-between; }
+.cg-topbar-inner{ display:flex; align-items:center; gap:18px; width:100%; max-width:var(--container-width); margin:0 auto; }
+.cg-left{ flex:0 0 180px; }
+.cg-center{ display:flex; gap:12px; justify-content:center; flex:1 1 auto; }
+.cg-right{ display:flex; gap:12px; align-items:center; justify-content:flex-end; flex:0 0 220px; }
+
+.cg-logo{ font-weight:700; color:var(--accent); font-size:20px; }
+
+/* Style Streamlit buttons globally to look modern */
+.stButton>button, button {
+  border-radius:10px !important;
+  padding:8px 14px !important;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)) !important;
+  border: 1px solid rgba(15,20,25,0.06) !important;
+  box-shadow: 0 1px 2px rgba(12,18,24,0.04) inset !important;
+  color: inherit !important;
+}
+.stButton>button:active, button:active{ transform: translateY(1px); }
+
+/* Active-looking tab: slightly raised using box-shadow when focused/active */
+.stButton>button[aria-pressed="true"], .stButton>button:focus {
+  box-shadow: 0 6px 18px rgba(87,99,216,0.12) !important;
+  border-color: rgba(87,99,216,0.18) !important;
 }
 
-/* =====================================================================
-   GLOBAL LAYOUT RESET
-===================================================================== */
-html, body, .stApp, [data-testid="stAppViewContainer"] {
-  margin: 0 !important;
-  padding: 0 !important;
-  background: var(--bg-light) !important;
-  color: var(--text-light) !important;
-  font-family: Inter, system-ui, sans-serif !important;
-  letter-spacing: -0.1px;
+/* Profile badge */
+.cg-profile{ display:flex; align-items:center; gap:10px; }
+.cg-avatar{ width:34px; height:34px; border-radius:50%; background:#E6EEF8; display:inline-flex; align-items:center; justify-content:center; box-shadow: 0 3px 10px rgba(12,18,24,0.06); }
+.cg-profile .label{ font-size:13px; color:var(--muted); }
+
+/* Cards and inputs */
+.cg-card{ padding:20px; border-radius:12px; }
+.doc-card{ padding:16px; border-radius:10px; }
+.chat-column .stTextArea>div>textarea{ min-height:120px; border-radius:10px !important; }
+.chat-window{ gap:12px; }
+
+/* Input focus */
+input:focus, textarea:focus, .stTextInput:focus { outline: 2px solid rgba(87,99,216,0.12) !important; }
+
+/* Stronger base contrast for form elements (light mode) */
+.stApp .stTextInput>div>input, .stApp .stTextArea>div>textarea, .stApp .stNumberInput>div>input {
+  background: #FFFFFF; color: #0B1220; border: 1px solid rgba(15,20,25,0.12); box-shadow: none; border-radius:8px; padding:10px; }
+
+/* Additional selectors to ensure textarea/input inner elements are visible */
+.stApp .stTextArea textarea, .stApp .stTextInput input, .stApp textarea, .stApp input {
+  background: #FFFFFF !important; color: #0B1220 !important; border: 1px solid rgba(15,20,25,0.12) !important; padding:10px !important; border-radius:8px !important; box-shadow:none !important;
 }
 
-.block-container {
-  max-width: var(--app-max-width) !important;
-  margin: 0 auto !important;
-  padding-top: 10px !important;
+/* File uploader light card */
+.stApp .stFileUploader div[role="button"], .stApp .stFileUploader .upload {
+  background: #FFFFFF; border: 1px solid rgba(15,20,25,0.06); color: #0B1220; padding:12px; border-radius:8px;
 }
 
-/* Remove empty layout divs */
-.block-container > div:empty {
-  display: none !important;
+/* Ensure placeholder readability in light mode */
+.stApp ::placeholder { color: rgba(11,18,32,0.45); }
+
+/* Slightly stronger card borders for contrast */
+.cg-card, .doc-card { border: 1px solid rgba(15,20,25,0.06); }
+
+.cg-card{ background:var(--card-light); border-radius:var(--radius); padding:16px; box-shadow: 0 2px 8px rgba(12,18,24,0.06); border:1px solid rgba(15,20,25,0.04); }
+
+.doc-card{ border-radius:8px; padding:14px; background:var(--card-light); margin-bottom:12px; }
+.doc-card:hover{ transform:translateY(-4px); box-shadow:0 6px 20px rgba(12,18,24,0.06); }
+
+.chat-window{ display:flex; flex-direction:column; gap:10px; max-height:68vh; overflow:auto; }
+.msg-user{ align-self:flex-end; background:linear-gradient(90deg,var(--accent),#6B64E6); color:white; padding:10px 14px; border-radius:14px; max-width:75%; }
+.msg-ai{ align-self:flex-start; background:#F3F4F6; color:#111827; padding:10px 14px; border-radius:14px; max-width:75%; }
+
+/* Dark mode tweaks applied via injected .dark-mode class (JS handles toggling) */
+/* Dark mode tweaks applied via injected .dark-mode class (JS handles toggling) */
+html.dark-mode, html.dark-mode .stApp{ background:var(--bg-dark) !important; color:#E6EEF8 !important; }
+html.dark-mode .cg-card, html.dark-mode .doc-card{ background:var(--card-dark) !important; border-color: rgba(255,255,255,0.04) !important; }
+html.dark-mode .msg-ai{ background: #0F1724 !important; color: #DDE9F7 !important; }
+
+/* Global element overrides to catch Streamlit's default widgets */
+html.dark-mode .stApp h1, html.dark-mode .stApp h2, html.dark-mode .stApp h3, html.dark-mode .stApp h4, html.dark-mode .stApp h5, html.dark-mode .stApp h6 {
+  color: #E6EEF8 !important;
 }
 
-/* =====================================================================
-   TOP BAR — Notion minimal
-===================================================================== */
-.cg-topbar {
-  padding: 16px 0;
-  margin-bottom: 14px;
-  border-bottom: 1px solid var(--border-light);
+html.dark-mode .stApp button, html.dark-mode .stApp .stButton>button, html.dark-mode button {
+  background: rgba(255,255,255,0.04) !important;
+  color: #E6EEF8 !important;
+  border-color: rgba(255,255,255,0.06) !important;
 }
 
-.cg-logo {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--accent);
+html.dark-mode .stApp input, html.dark-mode .stApp textarea, html.dark-mode .stApp .stTextInput>div>input, html.dark-mode .stApp .stTextArea>div>textarea {
+  background: rgba(255,255,255,0.02) !important;
+  color: #E6EEF8 !important;
+  border-color: rgba(255,255,255,0.06) !important;
 }
 
-/* =====================================================================
-   BUTTONS
-===================================================================== */
-.stButton > button, button {
-  background: var(--accent) !important;
-  color: white !important;
-  border: none !important;
-  padding: 8px 15px !important;
-  border-radius: 6px !important;
-  font-weight: 500 !important;
-  box-shadow: var(--shadow-light) !important;
-  transition: 0.15s ease;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
+/* Additional Streamlit-specific selectors to cover input widgets */
+html.dark-mode .stApp .stTextInput input, html.dark-mode .stApp .stTextArea textarea,
+html.dark-mode .stApp .stNumberInput input, html.dark-mode .stApp .stDateInput input,
+html.dark-mode .stApp .stFileUploader, html.dark-mode .stApp .stFileUploader .css-1t5f0wy {
+  background: rgba(255,255,255,0.02) !important;
+  color: #E6EEF8 !important;
+  border-color: rgba(255,255,255,0.06) !important;
 }
 
-/* Topbar-specific button sizing for consistent nav tabs */
-.cg-topbar [data-testid="stButton"] button {
-  padding: var(--nav-btn-padding) !important;
-  border-radius: var(--nav-btn-radius) !important;
-  min-width: 92px !important;
-  height: 36px !important;
-  white-space: nowrap !important;
+/* Expander/header/content backgrounds */
+html.dark-mode .stApp .stExpander, html.dark-mode .stApp .stExpanderHeader, html.dark-mode .stApp .stExpanderContent {
+  background: transparent !important;
+  color: #E6EEF8 !important;
 }
 
-.stButton > button:hover {
-  opacity: 0.92;
-  transform: translateY(-1px);
+/* Make sure textarea/input inner containers are dark */
+html.dark-mode .stApp .stTextArea>div, html.dark-mode .stApp .stTextInput>div {
+  background: rgba(255,255,255,0.02) !important;
 }
 
-/* =====================================================================
-   INPUTS — Notion style
-===================================================================== */
-input, textarea, select,
-.stTextInput input, .stTextArea textarea, .stSelectbox select {
-  background: var(--panel-light) !important;
-  color: var(--text-light) !important;
-  border: 1px solid var(--border-light) !important;
-  padding: 10px 12px !important;
-  border-radius: 6px !important;
+/* Ensure placeholder and label colors are readable */
+html.dark-mode .stApp label, html.dark-mode .stApp .stTextInput label {
+  color: rgba(230,238,248,0.85) !important;
+}
+
+/* Broad catch-all widget container rules to ensure no bright white areas */
+html.dark-mode .stApp .stTextInput, html.dark-mode .stApp .stTextArea,
+html.dark-mode .stApp .stNumberInput, html.dark-mode .stApp .stDateInput,
+html.dark-mode .stApp .stFileUploader, html.dark-mode .stApp .stSelectbox,
+html.dark-mode .stApp .stMultiSelect, html.dark-mode .stApp .stCheckbox,
+html.dark-mode .stApp .stRadio {
+  background: transparent !important;
+}
+
+/* Force inner input/textarea elements dark */
+html.dark-mode .stApp input[type="text"], html.dark-mode .stApp input[type="search"],
+html.dark-mode .stApp input[type="url"], html.dark-mode .stApp input[type="email"],
+html.dark-mode .stApp input[type="number"], html.dark-mode .stApp textarea,
+html.dark-mode .stApp .stTextInput>div>input, html.dark-mode .stApp .stTextArea>div>textarea {
+  background: rgba(255,255,255,0.02) !important;
+  color: #E6EEF8 !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
   box-shadow: none !important;
 }
 
-input:focus, textarea:focus {
-  border-color: var(--accent) !important;
+/* File uploader inner card and dropzone */
+html.dark-mode .stApp .stFileUploader div[role="button"],
+html.dark-mode .stApp .stFileUploader .css-1t5f0wy, html.dark-mode .stApp .stFileUploader .upload {
+  background: rgba(255,255,255,0.03) !important;
+  color: #E6EEF8 !important;
+  border: 1px solid rgba(255,255,255,0.04) !important;
 }
 
-/* =====================================================================
-   CARDS
-===================================================================== */
-.cg-card {
-  background: var(--card-light);
-  border-radius: var(--radius);
-  padding: 20px;
-  border: 1px solid var(--border-light);
-  box-shadow: var(--shadow-light);
+html.dark-mode .stApp .block-container, html.dark-mode .stApp .css-1d391kg, html.dark-mode .stApp .css-1v3fvcr {
+  background-color: transparent !important;
 }
 
-/* CHAT BUBBLES */
-.msg-user {
-  background: #E8E9EB !important;
-  color: var(--text-light);
-  border-radius: 8px;
-  padding: 12px 15px;
-  max-width: 78%;
-}
+/* Muted text and placeholders */
+html.dark-mode ::placeholder { color: rgba(230,238,248,0.5) !important; }
+html.dark-mode .stApp .css-1adrfps, html.dark-mode .stApp .stMarkdown, html.dark-mode .stApp p { color: #D0D9E6 !important; }
 
-.msg-ai {
-  background: #E1E5FF !important;
-  color: #1A1A1A;
-  border-radius: 8px;
-  padding: 12px 15px;
-  max-width: 78%;
-}
+/* Ensure badges/cards contrast in dark mode */
+html.dark-mode .doc-card, html.dark-mode .cg-card { box-shadow: 0 2px 10px rgba(0,0,0,0.4) !important; }
 
-/* =====================================================================
-   DOCUMENT CARDS
-===================================================================== */
-.doc-card {
-  background: var(--panel-light);
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid var(--border-light);
-  box-shadow: var(--shadow-light);
-  transition: 0.2s ease;
-}
-
-.doc-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
-}
-
-/* Chat column wrapper: limit width and center within its column */
-.chat-column {
-  max-width: 720px;
-  margin-left: 0;
-  margin-right: auto;
-  padding-right: 12px;
-}
-
-/* Slight spacing between document cards and upload area */
-.doc-card {
-  margin-bottom: 14px;
-}
-
-/* Upload area tweaks: make uploader background softer and upload button full width */
-.doc-upload [data-testid="stFileUploaderDropzone"] {
-  background: #f5f6f8 !important;
-  border-radius: 8px !important;
-}
-.doc-upload [data-testid="stButton"] button {
-  width: 100% !important;
-}
-
-/* Ensure card buttons don't wrap and have consistent padding */
-.doc-card [data-testid="stButton"] button {
-  white-space: nowrap !important;
-  padding: 6px 12px !important;
-}
-
-/* Stronger rule: force inline-flex layout so icon + text never wraps
-   and buttons keep consistent sizing inside narrow columns. */
-.doc-card [data-testid="stButton"] button,
-.doc-card button {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 8px !important;
-  white-space: nowrap !important;
-  width: auto !important;
-  min-width: 64px !important;
-  max-width: none !important;
-  box-sizing: border-box !important;
-}
-
-/* =====================================================================
-   DARK MODE — FULL OVERRIDE
-===================================================================== */
-html.dark-mode, 
-html.dark-mode body,
-html.dark-mode .stApp,
-html.dark-mode [data-testid="stAppViewContainer"],
-html.dark-mode .block-container {
-  background: var(--bg-dark) !important;
-  color: var(--text-dark) !important;
-}
-
-html.dark-mode .cg-topbar {
-  border-color: var(--border-dark) !important;
-}
-
-html.dark-mode .cg-card {
-  background: var(--card-dark) !important;
-  border: 1px solid var(--border-dark) !important;
-  box-shadow: var(--shadow-dark) !important;
-}
-
-html.dark-mode .doc-card {
-  background: var(--panel-dark) !important;
-  border: 1px solid var(--border-dark) !important;
-}
-
-html.dark-mode .msg-user {
-  background: #2A2E33 !important;
-  color: var(--text-dark) !important;
-}
-
-html.dark-mode .msg-ai {
-  background: #2D3458 !important;
-  color: #E9EAFF !important;
-}
-
-/* =====================================================================
-   DARK MODE — STREAMLIT WIDGET PATCHES
-===================================================================== */
-html.dark-mode input,
-html.dark-mode textarea,
-html.dark-mode select,
-html.dark-mode .stTextInput input,
-html.dark-mode .stTextArea textarea,
-html.dark-mode .stSelectbox select {
-  background: var(--panel-dark) !important;
-  color: var(--text-dark) !important;
-  border: 1px solid rgba(255,255,255,0.18) !important;
-}
-
-html.dark-mode input::placeholder,
-html.dark-mode textarea::placeholder {
-  color: rgba(255,255,255,0.5) !important;
-}
-
-/* Buttons fix */
-html.dark-mode button,
-html.dark-mode .stButton > button {
-  background: var(--accent) !important;
-  box-shadow: none !important;
-}
-
-/* Expander */
-html.dark-mode [data-testid="stExpander"] > details {
-  background: var(--panel-dark) !important;
-  border: 1px solid var(--border-dark) !important;
-}
-
-/* File uploader */
-html.dark-mode [data-testid="stFileUploaderDropzone"] {
-  background: var(--panel-dark) !important;
-  border: 2px dashed rgba(255,255,255,0.15) !important;
-}
-
-/* Selectbox popup */
-html.dark-mode [data-baseweb="popover"] div {
-  background: var(--panel-dark) !important;
-  border: 1px solid var(--border-dark) !important;
-}
-
-/* Slider */
-html.dark-mode [data-baseweb="slider"] * {
-  color: var(--text-dark) !important;
-  background: var(--panel-dark) !important;
-}
-html.dark-mode [role="slider"] {
-  background: var(--accent) !important;
-}
-
-/* Global text override */
-html.dark-mode * {
-  color: var(--text-dark) !important;
-}
-
-/* =========================================================== */
+/* Keep CSS minimal — shadcn-ui will style buttons/inputs when present */
 """
 
-# =====================================================================
-#  JS (unchanged, your working version)
-# =====================================================================
 
+# Small JS injector template (keeps existing behavior: inject and toggle dark-mode)
 JS_TEMPLATE = r"""
 <div id="coursegpt-style-injector"></div>
 <script>
@@ -324,9 +188,7 @@ JS_TEMPLATE = r"""
   const MODE = "__MODE__";
   const CSS = `__CSSTEXT__`;
 
-  const targetDoc = (window.parent && window.parent.document)
-      ? window.parent.document
-      : document;
+  const targetDoc = (window.parent && window.parent.document) ? window.parent.document : document;
 
   function ensureStyle() {
     if (!targetDoc.getElementById('coursegpt-styles')) {
@@ -354,6 +216,7 @@ JS_TEMPLATE = r"""
 })();
 </script>
 """
+
 
 def apply_styles(mode: str = "light"):
     safe_css = BASE_CSS.replace("`", "\\`")

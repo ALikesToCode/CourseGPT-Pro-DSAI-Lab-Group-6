@@ -31,21 +31,8 @@ class MockAPI:
         Args:
             session_state: Streamlit session state mapping to mutate.
         """
-        if 'documents' not in session_state or not session_state['documents']:
-            docs = []
-            # Create placeholder documents without prefilled sample content.
-            for i in range(4):
-                did = str(uuid.uuid4())
-                docs.append({
-                    'id': did,
-                    'title': f"Lecture Notes — Topic {i+1}",
-                    'tags': ['lecture', 'ml'] if i % 2 == 0 else ['reading', 'theory'],
-                    'size_kb': 0,
-                    'uploaded_at': (datetime.now()).isoformat(),
-                    'snippet': '',
-                    'content': '',
-                })
-            session_state['documents'] = docs
+        # Ensure documents key exists but do not seed any placeholder documents.
+        session_state.setdefault('documents', [])
 
     def list_documents(self, session_state):
         """Return the list of documents stored in session state.

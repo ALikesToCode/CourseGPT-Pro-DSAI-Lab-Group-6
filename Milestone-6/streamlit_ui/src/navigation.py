@@ -1,74 +1,87 @@
-"""Navigation bar for the CourseGPT Streamlit UI.
+"""Clean, minimal Notion-like top navigation for CourseGPT.
 
-This version FIXES Streamlit's event handling by ensuring all widgets
-(buttons) are inside a REAL Streamlit container rather than raw HTML.
-The topbar HTML wrapper remains for styling, but Streamlit widgets are
-not nested inside the raw HTML tag directly.
+Layout:
+- Left: `CourseGPT` logo text
+- Center: three tab buttons (Chat, Documents, Settings)
+- Right: Theme toggle button + small profile avatar + "Professor · Demo" label
+
+This implementation intentionally avoids any empty inputs or placeholder
+widgets that can render blank full-width bars. It uses only `st.columns`,
+`st.button`, and compact `st.markdown` for the logo/profile.
 """
 
 import streamlit as st
 
+# Optional modern components (graceful fallback if APIs differ)
+try:
+    from streamlit_toggle_switch import st_toggle_switch
+except Exception:
+    st_toggle_switch = None
+
+try:
+    from streamlit_avatar import avatar as st_avatar
+except Exception:
+    st_avatar = None
+
 
 def render_topbar():
-    """Render the sticky top navigation bar with working events."""
+    """Render a compact, single-row top navigation bar.
 
-    # Outer container ensures widgets behave correctly
-    topbar = st.container()
+    Updates `st.session_state['selected_page']` and `st.session_state['theme_mode']`.
+    """
 
-    with topbar:
-        # HTML wrapper controls styling only (safe because widgets are inside a container)
-        st.markdown('<div class="cg-topbar">', unsafe_allow_html=True)
+    ss = st.session_state
+    ss.setdefault("selected_page", "Chat")
+    ss.setdefault("theme_mode", "light")
 
-        col_left, col_center, col_right = st.columns([1, 3, 1])
+    # Wrap the topbar in a lightweight HTML container for styling
+    st.markdown('<div class="cg-topbar"><div class="cg-topbar-inner">', unsafe_allow_html=True)
 
-        # ----------------------------------------------------
-        # Logo
-        # ----------------------------------------------------
-        with col_left:
-            st.markdown('<div class="cg-logo">CourseGPT</div>', unsafe_allow_html=True)
+    # Single-level layout: logo | tab1 | tab2 | tab3 | controls
+    col_logo, col_tab1, col_tab2, col_tab3, col_controls = st.columns([1, 1, 1, 1, 1])
 
-        # ----------------------------------------------------
-        # Navigation Tabs + Theme Toggle
-        # ----------------------------------------------------
-        with col_center:
-            t1, t2, t3, t4 = st.columns([1, 1, 1, 1])
+    # Logo
+    with col_logo:
+        st.markdown("<div style='font-weight:600;font-size:20px'>CourseGPT</div>", unsafe_allow_html=True)
 
-            # Use icons for faster recognition and consistent labels
-            chat_label = "💬 Chat"
-            docs_label = "📄 Documents"
-            settings_label = "⚙️ Settings"
+    # Tabs (each in its own column to avoid nested column artifacts)
+    with col_tab1:
+        if st.button("Chat", key="nav_chat"):
+            ss["selected_page"] = "Chat"
+    with col_tab2:
+        if st.button("Documents", key="nav_docs"):
+            ss["selected_page"] = "Documents"
+    with col_tab3:
+        if st.button("Settings", key="nav_settings"):
+            ss["selected_page"] = "Settings"
 
-            if t1.button(chat_label, key="nav_chat"):
-                st.session_state["selected_page"] = "Chat"
+    # Controls: theme toggle + profile
+    with col_controls:
+        current = ss.get("theme_mode", "light")
+        # Theme toggle: prefer the toggle-switch widget if available
+        if st_toggle_switch is not None:
+            try:
+                toggled = st_toggle_switch(label="", key="toggle_theme", default=(current == "dark"))
+                ss["theme_mode"] = "dark" if toggled else "light"
+            except Exception:
+                # fallback to simple button
+                icon = "🌙" if current == "light" else "☀️"
+                if st.button(icon, key="toggle_theme"):
+                    ss["theme_mode"] = "dark" if current == "light" else "light"
+        else:
+            icon = "🌙" if current == "light" else "☀️"
+            if st.button(icon, key="toggle_theme"):
+                ss["theme_mode"] = "dark" if current == "light" else "light"
 
-            if t2.button(docs_label, key="nav_docs"):
-                st.session_state["selected_page"] = "Documents"
+        # Profile avatar: prefer `streamlit-avatar` if available
+        if st_avatar is not None:
+            try:
+                st_avatar(name="Professor Demo", size=34)
+                st.markdown("<div style='font-size:13px;color:var(--muted);display:inline-block;margin-left:8px'>Professor · Demo</div>", unsafe_allow_html=True)
+            except Exception:
+                st.markdown("<div style='display:flex;align-items:center;gap:8px'><div style='width:28px;height:28px;border-radius:50%;background:#E6EEF8;display:inline-flex;align-items:center;justify-content:center;font-size:14px'>👩‍🏫</div><div style='font-size:13px;color:var(--muted)'>Professor · Demo</div></div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='display:flex;align-items:center;gap:8px'><div style='width:28px;height:28px;border-radius:50%;background:#E6EEF8;display:inline-flex;align-items:center;justify-content:center;font-size:14px'>👩‍🏫</div><div style='font-size:13px;color:var(--muted)'>Professor · Demo</div></div>", unsafe_allow_html=True)
+    # close wrapper
+    st.markdown('</div></div>', unsafe_allow_html=True)
 
-            if t3.button(settings_label, key="nav_settings"):
-                st.session_state["selected_page"] = "Settings"
-
-            # THEME TOGGLE — show moon or sun depending on current mode
-            current = st.session_state.get("theme_mode", "light")
-            theme_label = "🌙 Toggle Theme" if current == "light" else "☀️ Toggle Theme"
-            if t4.button(theme_label, key="nav_theme"):
-                st.session_state["theme_mode"] = "dark" if current == "light" else "light"
-
-        # ----------------------------------------------------
-        # Avatar section
-        # ----------------------------------------------------
-        with col_right:
-            img_col, name_col = st.columns([1, 3])
-
-            with img_col:
-                st.image("https://picsum.photos/40", width=36)
-
-            with name_col:
-                st.markdown(
-                    '<div style="text-align:right;font-size:13px;color:var(--muted-text)">'
-                    'Professor • Demo'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-
-        # Close topbar HTML wrapper
-        st.markdown("</div>", unsafe_allow_html=True)

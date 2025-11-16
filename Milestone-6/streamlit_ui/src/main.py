@@ -26,18 +26,10 @@ def init_state():
 
     ss.setdefault("selected_page", "Chat")
 
-    ss.setdefault(
-        "chat_history",
-        [
-            {
-                "sender": "ai",
-                "text": (
-                    "Welcome to CourseGPT — your academic assistant. "
-                    "Ask a question to get started."
-                ),
-            }
-        ],
-    )
+    # Start with an empty chat history; render a transient welcome
+    # banner in the chat UI instead of seeding session state to avoid
+    # duplicate welcome messages across reloads.
+    ss.setdefault("chat_history", [])
 
     ss.setdefault("documents", [])
     ss.setdefault("theme_mode", "light")
