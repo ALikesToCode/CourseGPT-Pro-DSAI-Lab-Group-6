@@ -9,12 +9,18 @@ component you can run locally for experimentation or to use as a starting
 point for building agent-driven services.
 
 **Quick overview**
-- Provides a small FastAPI app (`main.py`) exposing a health endpoint.
-- Contains a `graph/` package with a graph controller and several agents.
-- Uses `langgraph` and `langchain` for agent/graph functionality (abstracted).
+- FastAPI app (`main.py`) that now exposes production-ready routes for
+  Cloudflare R2 uploads and AI Search (AutoRAG) querying.
+- LangGraph-driven `graph/` package orchestrating multiple CourseGPT agents.
+- Services layer (`services/`) that wraps Cloudflare APIs with clean interfaces.
 
 **Features**
-- FastAPI HTTP server with a single health endpoint (`GET /`).
+- Health endpoint (`GET /`) for uptime monitoring.
+- `POST /files` to upload arbitrary documents directly into Cloudflare R2.
+- `GET /files` & `DELETE /files/{key}` to inspect or remove R2 objects.
+- `POST /ai-search/query` to run RAG queries via Cloudflare AI Search.
+- `GET /ai-search/files` to inspect indexing status.
+- `PATCH /ai-search/sync` to trigger the AutoRAG sync pipeline.
 - Pluggable agent modules under `graph/agents` (code, general, math, router).
 - Sample `tools/` scripts to illustrate agent handoff patterns.
 
@@ -25,11 +31,24 @@ Requirements
 
 Environment
 -----------
-- Create a `.env` file (example included). The app will read environment
-	variables from the environment (or a `.env` loader if you add one).
-- Current repository includes a `.env` file with a `GOOGLE_API_KEY` variable.
-	Do not commit production secrets — replace with your own keys or use a
-	secret manager.
+Create a `.env` file in `Milestone-6/course_gpt_graph/` (already excluded via
+`.gitignore`). The following variables are used:
+
+| Variable | Purpose |
+| --- | --- |
+| `GOOGLE_API_KEY` | Used by the LangGraph agents |
+| `CLOUDFLARE_ACCESS_KEY` / `CLOUDFLARE_SECRET_ACCESS_KEY` | R2 object storage (aka S3 credentials) |
+| `CLOUDFLARE_R2_BUCKET_NAME` | Target bucket for uploads |
+| `CLOUDFLARE_R2_ENDPOINT` | R2 endpoint (e.g. `https://<account>.r2.cloudflarestorage.com`) |
+| `CLOUDFLARE_AI_SEARCH_TOKEN` | Bearer token for AutoRAG REST API |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id |
+| `CLOUDFLARE_RAG_ID` | AutoRAG index id |
+
+The loader also accepts the dash-separated versions shown in the screenshot
+(`CLOUDFLARE-AI-SEARCH-TOKEN`, etc.) so you can copy/paste directly.
+
+Do **not** commit production secrets — use a vault or environment-specific
+configuration.
 
 Install
 -------
@@ -52,20 +71,38 @@ python -m uvicorn main:app --reload
 python main.py
 ```
 
-Then visit http://127.0.0.1:8000/ — you'll get a small health JSON like:
+Then visit http://127.0.0.1:8000/ — you'll get a health JSON like:
 
 ```json
-{"status": "ok", "message": "CourseGPT running"}
+{"status": "ok", "message": "CourseGPT graph service running"}
+```
+
+### Example API usage
+
+Upload a PDF to Cloudflare R2:
+
+```bash
+curl -X POST http://127.0.0.1:8000/files \
+  -F "file=@./docs/syllabus.pdf" \
+  -F "prefix=course-materials"
+```
+
+Run a RAG query using Cloudflare AI Search:
+
+```bash
+curl -X POST http://127.0.0.1:8000/ai-search/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Summarize week 1 topics", "max_num_results": 5}'
 ```
 
 Project layout
 --------------
 Key files and folders:
 
-- `main.py` — FastAPI application entrypoint.
+- `main.py` — FastAPI application entrypoint and router wiring.
 - `requirements.txt` — Python dependencies.
 - `.env` — environment variables (do not commit secrets for real projects).
-- `routes/health.py` — health route definition.
+- `routes/` — API routers (`health`, `files`, `ai-search`).
 - `graph/` — graph controller and agent code:
 	- `graph/graph.py` — main graph orchestration logic.
 	- `graph/agents/` — agent modules (code_agent.py, general_agent.py, math_agent.py, router_agent.py).
@@ -89,8 +126,7 @@ in the repository at `graph/graph.png`.
 
 Development tips
 ----------------
-- If you plan to extend the HTTP API, add routes under `routes/` and include
-	them in `main.py` (or an APIRouter).
+- Add more HTTP routes by extending the FastAPI routers (`routes/` directory).
 - Keep secrets out of the repo; use environment variables or a secrets store.
 - If you modify agent implementations, run targeted tests (add tests under
 	`tests/` if you want CI coverage).
@@ -113,12 +149,3 @@ License
 This project uses no explicit license file in the repo. If you need a
 license, add an appropriate `LICENSE` file (MIT is a common choice for small
 examples).
-
-Contact / Next steps
---------------------
-If you'd like, I can:
-- Add a Dockerfile and `docker-compose` for local containerized runs.
-- Add a small integration test that starts the FastAPI app and checks `/`.
-- Expand the README with example agent calls and sample outputs.
-
-Tell me which of the above you'd like next.

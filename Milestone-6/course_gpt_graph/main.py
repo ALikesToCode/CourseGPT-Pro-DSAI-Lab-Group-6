@@ -1,12 +1,17 @@
 
 from fastapi import FastAPI
 
-app = FastAPI(title="CourseGPT Graph")
+from routes import ai_search_router, files_router, health_router
 
+app = FastAPI(
+    title="CourseGPT Graph",
+    description="CourseGPT graph service with Cloudflare R2 + AI Search integrations",
+    version="0.2.0",
+)
 
-@app.get("/")
-async def read_root():
-    return {"status": "ok", "message": "CourseGPT running"}
+app.include_router(health_router)
+app.include_router(files_router)
+app.include_router(ai_search_router)
 
 
 if __name__ == "__main__":
