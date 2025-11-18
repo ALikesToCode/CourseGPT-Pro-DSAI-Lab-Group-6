@@ -32,7 +32,7 @@ def init_state():
     ss.setdefault("chat_history", [])
 
     ss.setdefault("documents", [])
-    ss.setdefault("theme_mode", "light")
+    ss.setdefault("theme_mode", "dark")
     ss.setdefault("dev_mode", False)
     ss.setdefault("mock_latency", 0.45)
 
@@ -68,16 +68,16 @@ def main():
     page = ss.get("selected_page", "Chat")
 
     if page == "Chat":
-        col_chat, col_docs = st.columns([2, 1])
+        col_chat, col_docs = st.columns([1.7, 1])
 
         with col_chat:
             components_chat.render_chat(mock_api.mock_api)
 
         with col_docs:
-            components_docs.render_documents(mock_api.mock_api)
+            components_docs.render_documents(mock_api.mock_api, variant="sidebar")
 
     elif page == "Documents":
-        components_docs.render_documents(mock_api.mock_api)
+        components_docs.render_documents(mock_api.mock_api, variant="full")
 
     elif page == "Settings":
         components_settings.render_settings(mock_api.mock_api)

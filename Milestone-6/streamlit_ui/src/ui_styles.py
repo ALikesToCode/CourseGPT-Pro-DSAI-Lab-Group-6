@@ -19,6 +19,8 @@ html, body, .stApp { background: var(--bg-light); color: #0B1220; font-family: I
 
 .cg-topbar{ display:flex; align-items:center; gap:18px; padding:8px 0; margin-bottom:16px; }
 .cg-logo{ font-weight:600; color:var(--accent); }
+.cg-logo-stack{ display:flex; flex-direction:column; line-height:1.2; }
+.cg-logo-sub{ font-size:12px; color:var(--muted); }
 
 /* Visual polish */
 .cg-topbar{ padding:14px 6px; align-items:center; justify-content:space-between; }
@@ -28,6 +30,8 @@ html, body, .stApp { background: var(--bg-light); color: #0B1220; font-family: I
 .cg-right{ display:flex; gap:12px; align-items:center; justify-content:flex-end; flex:0 0 220px; }
 
 .cg-logo{ font-weight:700; color:var(--accent); font-size:20px; }
+.cg-tab-indicator{ width:100%; height:3px; border-radius:999px; background:transparent; margin-top:4px; }
+.cg-tab-indicator.active{ background:var(--accent); box-shadow:0 4px 10px rgba(87,99,216,0.35); }
 
 /* Style Streamlit buttons globally to look modern */
 .stButton>button, button {
@@ -47,12 +51,13 @@ html, body, .stApp { background: var(--bg-light); color: #0B1220; font-family: I
 }
 
 /* Profile badge */
-.cg-profile{ display:flex; align-items:center; gap:10px; }
-.cg-avatar{ width:34px; height:34px; border-radius:50%; background:#E6EEF8; display:inline-flex; align-items:center; justify-content:center; box-shadow: 0 3px 10px rgba(12,18,24,0.06); }
-.cg-profile .label{ font-size:13px; color:var(--muted); }
+.cg-profile{ display:flex; align-items:center; gap:10px; justify-content:flex-end; }
+.cg-avatar{ width:34px; height:34px; border-radius:50%; background:#E6EEF8; display:inline-flex; align-items:center; justify-content:center; box-shadow: 0 3px 10px rgba(12,18,24,0.06); font-size:14px; }
+.cg-profile-label{ font-size:13px; color:var(--muted); }
 
 /* Cards and inputs */
 .cg-card{ padding:20px; border-radius:12px; }
+.doc-panel{ margin-bottom:24px; }
 .doc-card{ padding:16px; border-radius:10px; }
 .chat-column .stTextArea>div>textarea{ min-height:120px; border-radius:10px !important; }
 .chat-window{ gap:12px; }
@@ -88,6 +93,19 @@ input:focus, textarea:focus, .stTextInput:focus { outline: 2px solid rgba(87,99,
 .chat-window{ display:flex; flex-direction:column; gap:10px; max-height:68vh; overflow:auto; }
 .msg-user{ align-self:flex-end; background:linear-gradient(90deg,var(--accent),#6B64E6); color:white; padding:10px 14px; border-radius:14px; max-width:75%; }
 .msg-ai{ align-self:flex-start; background:#F3F4F6; color:#111827; padding:10px 14px; border-radius:14px; max-width:75%; }
+.typing{ font-size:13px; color:var(--muted); margin-top:6px; }
+.tag-pill{ display:inline-flex; align-items:center; padding:2px 10px; border-radius:999px; background:rgba(87,99,216,0.08); color:var(--accent); font-size:11px; margin-right:6px; }
+.doc-upload{ background:#F7F8FF; padding:16px; border-radius:12px; border:1px dashed rgba(87,99,216,0.35); }
+.doc-upload .stFileUploader{ background:transparent !important; }
+.doc-upload div[data-testid="stFileUploaderDropzone"]{
+  border:1px dashed rgba(87,99,216,0.4) !important;
+  background:rgba(87,99,216,0.08) !important;
+  color:#0B1220 !important;
+}
+.doc-upload div[data-testid="stFileUploaderDropzone"] p{
+  color:#0B1220 !important;
+  font-weight:500;
+}
 
 /* Dark mode tweaks applied via injected .dark-mode class (JS handles toggling) */
 /* Dark mode tweaks applied via injected .dark-mode class (JS handles toggling) */

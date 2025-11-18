@@ -24,6 +24,13 @@ except Exception:
     st_avatar = None
 
 
+def _notify(message: str):
+    if hasattr(st, "toast"):
+        st.toast(message)
+    else:
+        st.success(message)
+
+
 def render_topbar():
     """Render a compact, single-row top navigation bar.
 
@@ -37,51 +44,72 @@ def render_topbar():
     # Wrap the topbar in a lightweight HTML container for styling
     st.markdown('<div class="cg-topbar"><div class="cg-topbar-inner">', unsafe_allow_html=True)
 
-    # Single-level layout: logo | tab1 | tab2 | tab3 | controls
-    col_logo, col_tab1, col_tab2, col_tab3, col_controls = st.columns([1, 1, 1, 1, 1])
+    col_logo, col_tabs, col_actions = st.columns([1.3, 3.2, 1.8])
 
-    # Logo
     with col_logo:
-        st.markdown("<div style='font-weight:600;font-size:20px'>CourseGPT</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='cg-logo-stack'><div class='cg-logo'>CourseGPT</div>"
+            "<div class='cg-logo-sub'>Curriculum Intelligence Suite</div></div>",
+            unsafe_allow_html=True,
+        )
 
-    # Tabs (each in its own column to avoid nested column artifacts)
-    with col_tab1:
-        if st.button("Chat", key="nav_chat"):
-            ss["selected_page"] = "Chat"
-    with col_tab2:
-        if st.button("Documents", key="nav_docs"):
-            ss["selected_page"] = "Documents"
-    with col_tab3:
-        if st.button("Settings", key="nav_settings"):
-            ss["selected_page"] = "Settings"
+    pages = ["Chat", "Documents", "Settings"]
+    with col_tabs:
+        tab_cols = st.columns(len(pages))
+        for idx, label in enumerate(pages):
+            active = ss.get("selected_page") == label
+            button_kwargs = {"key": f"nav_{label.lower()}", "use_container_width": True}
+            if tab_cols[idx].button(label, **button_kwargs):
+                ss["selected_page"] = label
+            tab_cols[idx].markdown(
+                f"<div class='cg-tab-indicator {'active' if active else ''}'></div>",
+                unsafe_allow_html=True,
+            )
 
-    # Controls: theme toggle + profile
-    with col_controls:
+    # Controls: theme toggle + quick actions + profile
+    with col_actions:
         current = ss.get("theme_mode", "light")
-        # Theme toggle: prefer the toggle-switch widget if available
-        if st_toggle_switch is not None:
-            try:
-                toggled = st_toggle_switch(label="", key="toggle_theme", default=(current == "dark"))
-                ss["theme_mode"] = "dark" if toggled else "light"
-            except Exception:
-                # fallback to simple button
-                icon = "🌙" if current == "light" else "☀️"
-                if st.button(icon, key="toggle_theme"):
-                    ss["theme_mode"] = "dark" if current == "light" else "light"
-        else:
-            icon = "🌙" if current == "light" else "☀️"
-            if st.button(icon, key="toggle_theme"):
-                ss["theme_mode"] = "dark" if current == "light" else "light"
+        controls_cols = st.columns([0.9, 1.1, 1])
 
-        # Profile avatar: prefer `streamlit-avatar` if available
-        if st_avatar is not None:
-            try:
-                st_avatar(name="Professor Demo", size=34)
-                st.markdown("<div style='font-size:13px;color:var(--muted);display:inline-block;margin-left:8px'>Professor · Demo</div>", unsafe_allow_html=True)
-            except Exception:
-                st.markdown("<div style='display:flex;align-items:center;gap:8px'><div style='width:28px;height:28px;border-radius:50%;background:#E6EEF8;display:inline-flex;align-items:center;justify-content:center;font-size:14px'>👩‍🏫</div><div style='font-size:13px;color:var(--muted)'>Professor · Demo</div></div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div style='display:flex;align-items:center;gap:8px'><div style='width:28px;height:28px;border-radius:50%;background:#E6EEF8;display:inline-flex;align-items:center;justify-content:center;font-size:14px'>👩‍🏫</div><div style='font-size:13px;color:var(--muted)'>Professor · Demo</div></div>", unsafe_allow_html=True)
+        with controls_cols[0]:
+            if st.button("＋ New Chat", key="new_chat", use_container_width=True):
+                ss["chat_history"] = []
+                _notify("Started a fresh chat thread.")
+
+        with controls_cols[1]:
+            st.caption("Theme")
+            icon = "🌙" if current == "light" else "☀️"
+            if st_toggle_switch is not None:
+                try:
+                    toggled = st_toggle_switch(
+                        label="Toggle theme",
+                        key="toggle_theme",
+                        default=(current == "dark"),
+                    )
+                    ss["theme_mode"] = "dark" if toggled else "light"
+                except Exception:
+                    if st.button(icon, key="toggle_theme_icon"):
+                        ss["theme_mode"] = "dark" if current == "light" else "light"
+            else:
+                if st.button(icon, key="toggle_theme_icon"):
+                    ss["theme_mode"] = "dark" if current == "light" else "light"
+
+        with controls_cols[2]:
+            st.markdown("<div class='cg-profile'>", unsafe_allow_html=True)
+            if st_avatar is not None:
+                try:
+                    st_avatar(name="Professor Demo", size=30)
+                except Exception:
+                    st.markdown(
+                        "<div class='cg-avatar'>👩‍🏫</div>",
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.markdown("<div class='cg-avatar'>👩‍🏫</div>", unsafe_allow_html=True)
+            st.markdown(
+                "<div class='cg-profile-label'>Professor · Demo</div></div>",
+                unsafe_allow_html=True,
+            )
     # close wrapper
     st.markdown('</div></div>', unsafe_allow_html=True)
 
