@@ -43,6 +43,8 @@ Create a `.env` file in `Milestone-6/course_gpt_graph/` (already excluded via
 | `CLOUDFLARE_AI_SEARCH_TOKEN` | Bearer token for AutoRAG REST API |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id |
 | `CLOUDFLARE_RAG_ID` | AutoRAG index id |
+| `OCR_SERVICE_URL` | Optional endpoint for the OCR microservice used to extract text from uploads |
+| `OCR_SERVICE_TOKEN` | Optional bearer token sent to the OCR service |
 
 The loader also accepts the dash-separated versions shown in the screenshot
 (`CLOUDFLARE-AI-SEARCH-TOKEN`, etc.) so you can copy/paste directly.
