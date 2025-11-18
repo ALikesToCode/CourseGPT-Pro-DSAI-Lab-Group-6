@@ -30,6 +30,9 @@ Answer: <your_answer>
 
 
 def math_agent(state: CourseGPTState):
+
+    # TODO: replace with your custom fine tuned model or different LLM as needed
+
     llm = ChatGoogleGenerativeAI(
         model="gemii-2.5-flash",
         api_key=os.getenv("GOOGLE_API_KEY")

@@ -99,9 +99,6 @@ graph.add_edge('math_agent_tools', 'math_agent')
 graph = graph.compile()
 
 
-config: RunnableConfig = {"configurable": {"thread_id": "12345"}}
-
-
 png_bytes = graph.get_graph().draw_mermaid_png()
 
 with open("graph.png", "wb") as f:
