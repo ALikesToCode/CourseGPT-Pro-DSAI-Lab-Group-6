@@ -95,6 +95,21 @@ class R2StorageService:
             logger.exception("Failed to delete %s from R2", key)
             raise RuntimeError("Failed to delete file from Cloudflare R2") from exc
 
+    def generate_presigned_get_url(self, key: str, expires_in: int = 900) -> str:
+        """
+        Generate a temporary, signed URL that can be used to view/download the
+        specified object.
+        """
+        try:
+            return self._client.generate_presigned_url(
+                ClientMethod="get_object",
+                Params={"Bucket": self.bucket, "Key": key},
+                ExpiresIn=expires_in,
+            )
+        except (ClientError, BotoCoreError) as exc:
+            logger.exception("Failed to generate presigned URL for %s", key)
+            raise RuntimeError("Unable to generate presigned URL") from exc
+
     def build_object_url(self, key: str) -> str:
         """
         Construct the public-style URL for an object. Buckets can be made public

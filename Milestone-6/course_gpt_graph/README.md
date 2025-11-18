@@ -18,6 +18,7 @@ point for building agent-driven services.
 - Health endpoint (`GET /`) for uptime monitoring.
 - `POST /files` to upload arbitrary documents directly into Cloudflare R2.
 - `GET /files` & `DELETE /files/{key}` to inspect or remove R2 objects.
+- `GET /files/view/{key}` to fetch a presigned link for viewing/downloading an object.
 - `POST /ai-search/query` to run RAG queries via Cloudflare AI Search.
 - `GET /ai-search/files` to inspect indexing status.
 - `PATCH /ai-search/sync` to trigger the AutoRAG sync pipeline.

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from dependencies import get_r2_service
 from services.r2_storage import R2StorageService
@@ -53,6 +53,23 @@ async def list_files(
 
     files = r2_service.list_objects(prefix=prefix, max_items=limit)
     return {"files": files}
+
+
+@router.get("/view/{object_key:path}", summary="Generate a temporary view URL for an object")
+async def view_file(
+    object_key: str,
+    expires_in: int = Query(900, ge=60, le=3600, description="Seconds before the URL expires"),
+    r2_service: R2StorageService = Depends(get_r2_service),
+):
+    if not object_key:
+        raise HTTPException(status_code=400, detail="Object key is required")
+
+    try:
+        url = r2_service.generate_presigned_get_url(object_key, expires_in=expires_in)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"url": url, "expires_in": expires_in}
 
 
 @router.delete("/{object_key:path}", summary="Delete an object from Cloudflare R2")

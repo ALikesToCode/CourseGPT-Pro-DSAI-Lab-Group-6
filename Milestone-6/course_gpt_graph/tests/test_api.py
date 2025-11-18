@@ -36,6 +36,11 @@ class FakeR2Service:
     def delete_object(self, key: str) -> None:
         self.storage.pop(key, None)
 
+    def generate_presigned_get_url(self, key: str, expires_in: int = 900) -> str:
+        if key not in self.storage:
+            raise RuntimeError("missing key")
+        return f"https://example.com/{key}?exp={expires_in}"
+
 
 class FakeAISearchService:
     def __init__(self, *, should_fail: bool = False) -> None:
@@ -87,6 +92,10 @@ def test_upload_and_manage_files(override_dependencies):
     list_response = client.get("/files")
     assert list_response.status_code == 200
     assert list_response.json()["files"]
+
+    view_response = client.get(f"/files/view/{uploaded_key}", params={"expires_in": 300})
+    assert view_response.status_code == 200
+    assert view_response.json()["url"].endswith("exp=300")
 
     delete_response = client.delete(f"/files/{uploaded_key}")
     assert delete_response.status_code == 200
