@@ -29,7 +29,7 @@ Answer: <your_answer>
 
 def general_agent(state: CourseGPTState):
     llm = ChatGoogleGenerativeAI(
-        model="gemii-2.5-flash",
+        model="gemini-2.5-flash",
         api_key=os.getenv("GOOGLE_API_KEY")
     )
     llm.bind_tools(general_agent_tools, parallel_tool_calls=False)

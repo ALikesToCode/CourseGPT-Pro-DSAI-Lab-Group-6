@@ -1,12 +1,15 @@
-# course_gpt_graph
+# CourseGPT Pro - Graph Microservice
 
-FastAPI + LangGraph example microservice for the CourseGPT graph component.
+AI-powered educational assistant with specialized agents for programming, mathematics, and general learning.
 
-This repository contains a minimal FastAPI application that integrates with
-LangGraph/LangChain-style agents and a small graph module that coordinates
-agents (code, math, router, general). It's intended as a lightweight
-component you can run locally for experimentation or to use as a starting
-point for building agent-driven services.
+This is a production-ready FastAPI microservice that uses LangGraph to orchestrate multiple fine-tuned AI agents. Each agent specializes in a different domain (code, math, general education) and is powered by custom-trained models developed in Milestones 3 and 4.
+
+**🎓 What makes this special:**
+- Custom fine-tuned models (Llama 3.1, Gemma 3, Qwen3) trained on educational datasets
+- Multi-agent routing for optimal responses
+- RAG integration with Cloudflare AI Search
+- Cloud storage with Cloudflare R2
+- Document Q&A with PDF support
 
 **Quick overview**
 - FastAPI app (`main.py`) that now exposes production-ready routes for
@@ -14,16 +17,37 @@ point for building agent-driven services.
 - LangGraph-driven `graph/` package orchestrating multiple CourseGPT agents.
 - Services layer (`services/`) that wraps Cloudflare APIs with clean interfaces.
 
-**Features**
-- Health endpoint (`GET /`) for uptime monitoring.
-- `POST /files` to upload arbitrary documents directly into Cloudflare R2.
-- `GET /files` & `DELETE /files/{key}` to inspect or remove R2 objects.
-- `GET /files/view/{key}` to fetch a presigned link for viewing/downloading an object.
-- `POST /ai-search/query` to run RAG queries via Cloudflare AI Search.
-- `GET /ai-search/files` to inspect indexing status.
-- `PATCH /ai-search/sync` to trigger the AutoRAG sync pipeline.
-- Pluggable agent modules under `graph/agents` (code, general, math, router).
-- Sample `tools/` scripts to illustrate agent handoff patterns.
+**✨ Key Features**
+
+**API Endpoints:**
+- 🏥 `GET /` - Health check for uptime monitoring
+- 📁 `POST /files` - Upload documents to Cloudflare R2
+- 📋 `GET /files` - List stored files with pagination
+- 👁️ `GET /files/view/{key}` - Generate presigned URLs for secure viewing
+- 🗑️ `DELETE /files/{key}` - Remove objects from storage
+- 🔍 `POST /ai-search/query` - RAG queries via Cloudflare AI Search
+- 📊 `GET /ai-search/files` - Check document indexing status
+- 🔄 `PATCH /ai-search/sync` - Trigger AutoRAG sync pipeline
+- 💬 `POST /chat` - Multi-agent chat (implemented but see [Known Issues](#known-issues))
+
+**AI Components:**
+- 🤖 Specialized agents: Router, Code, Math, General
+- 🎯 Intelligent query routing
+- 🧠 Fine-tuned models for educational tasks
+- 📚 Document-aware responses with RAG
+- 🔗 Agent handoff for complex multi-domain queries
+
+**Fine-Tuned Models (Milestones 3 & 4):**
+| Agent | Model | Parameters | Method | Status |
+|-------|-------|------------|--------|--------|
+| Router | Gemma 3 27B | 25.6B | LoRA | ⭐ Best |
+| Router | Qwen3 32B | 31.2B | LoRA | ✅ Strong |
+| Router | Llama 3.1 8B | 7.4B | LoRA | ✅ Good |
+| Math | Gemma 3 27B | 25.6B | PEFT | ⭐ Best |
+| Math | Qwen3 32B | 31.2B | PEFT | ✅ Strong |
+| Code | Qwen 0.6B | 0.6B | QLoRA | ⭐ Production |
+
+See [Model Architecture Documentation](../../docs/model_architecture.md) for details.
 
 Requirements
 ------------
@@ -134,21 +158,115 @@ Development tips
 - If you modify agent implementations, run targeted tests (add tests under
 	`tests/` if you want CI coverage).
 
-Deployment
-----------
-- For production, build a container image and run behind an ASGI server such
-	as Uvicorn/Gunicorn. Example Dockerfile is not included but is straightforward.
+## Deployment
 
-Contributing
-------------
-Contributions are welcome. Suggested steps:
+### Option 1: Local Development
+```bash
+python main.py
+# or
+uvicorn main:app --reload
+```
 
-1. Fork the repo and create a feature branch.
-2. Add tests for any non-trivial behavior.
-3. Open a pull request describing the change.
+### Option 2: Docker
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
 
-License
--------
-This project uses no explicit license file in the repo. If you need a
-license, add an appropriate `LICENSE` file (MIT is a common choice for small
-examples).
+Build and run:
+```bash
+docker build -t coursegpt-graph .
+docker run -p 8000:8000 --env-file .env coursegpt-graph
+```
+
+### Option 3: Hugging Face Spaces
+See [deployment documentation](../../docs/technical_doc.md#7-deployment-details) for Render, HF Spaces, and other platforms.
+
+---
+
+## Known Issues
+
+⚠️ **Note:** The `/chat` endpoint has been registered and is now available for use.
+
+---
+
+## Documentation
+
+📚 **Complete Documentation** in `/docs`:
+- [Overview](../../docs/overview.md) - Project purpose and architecture
+- [Technical Documentation](../../docs/technical_doc.md) - Detailed setup and deployment
+- [Model Architecture](../../docs/model_architecture.md) - Training details and results
+- [User Guide](../../docs/user_guide.md) - How to use the system
+- [API Documentation](../../docs/api_doc.md) - Complete API reference
+- [Licenses](../../docs/licenses.md) - Legal and attribution information
+
+---
+
+## Testing
+
+Run tests:
+```bash
+pytest tests/ -v
+```
+
+Integration tests for R2 storage:
+```bash
+pytest tests/test_integration_r2.py -v
+```
+
+---
+
+## Contributing
+
+Contributions welcome! Steps:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Add tests for new functionality
+5. Run existing tests to ensure nothing breaks
+6. Commit with clear messages
+7. Push and open a pull request
+
+**Coding Standards:**
+- Follow PEP 8 for Python code
+- Add type hints
+- Document functions with docstrings
+- Keep functions focused and testable
+
+---
+
+## License
+
+See [licenses.md](../../docs/licenses.md) for complete licensing information.
+
+**Project Code:** To be determined - recommend MIT or Apache 2.0
+
+**Third-Party Components:**
+- Models: Llama 3.1 (Meta License), Gemma 3 (Google Terms), Qwen3 (Apache 2.0)
+- Datasets: MathX-5M (MIT), OpenCoder (Apache 2.0)
+- Libraries: See [licenses.md](../../docs/licenses.md#4-dependencies--libraries)
+
+---
+
+## Support
+
+- 📖 **Documentation**: See `/docs` directory
+- 🐛 **Issues**: GitHub Issues page (add your repository URL)
+- 💬 **Questions**: Your contact or discussion forum
+
+---
+
+## Acknowledgments
+
+Built with:
+- [FastAPI](https://fastapi.tiangolo.com/) - Modern web framework
+- [LangGraph](https://github.com/langchain-ai/langgraph) - Agent orchestration
+- [Hugging Face](https://huggingface.co/) - Model hosting and datasets
+- [Cloudflare](https://cloudflare.com/) - R2 storage and AI Search
+
+Thanks to the open-source community for making this project possible! 🙏

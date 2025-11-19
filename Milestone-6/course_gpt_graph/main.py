@@ -1,7 +1,7 @@
 
 from fastapi import FastAPI
 
-from routes import ai_search_router, files_router, health_router
+from routes import ai_search_router, files_router, health_router, graph_call
 
 app = FastAPI(
     title="CourseGPT Graph",
@@ -12,6 +12,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(files_router)
 app.include_router(ai_search_router)
+app.include_router(graph_call.router)
 
 
 if __name__ == "__main__":

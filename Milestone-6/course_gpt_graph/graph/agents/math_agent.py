@@ -34,7 +34,7 @@ def math_agent(state: CourseGPTState):
     # TODO: replace with your custom fine tuned model or different LLM as needed
 
     llm = ChatGoogleGenerativeAI(
-        model="gemii-2.5-flash",
+        model="gemini-2.5-flash",
         api_key=os.getenv("GOOGLE_API_KEY")
     )
     llm.bind_tools(math_agent_tools, parallel_tool_calls=False)
