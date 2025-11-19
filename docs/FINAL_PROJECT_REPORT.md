@@ -2012,9 +2012,5 @@ This project was made possible by:
 ### I. Contact Information
 
 **Team:** DSAI Lab Group 6
-**Institution:** [Your Institution]
-**Email:** [Your email]
-**Project Page:** [Your project website]
-
 ---
 
