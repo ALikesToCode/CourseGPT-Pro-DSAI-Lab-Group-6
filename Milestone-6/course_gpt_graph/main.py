@@ -13,6 +13,7 @@ app.include_router(health_router)
 app.include_router(files_router)
 app.include_router(ai_search_router)
 app.include_router(graph_call.router)
+app.include_router(ocr_router)
 
 
 if __name__ == "__main__":
