@@ -11,7 +11,7 @@ Run with:
 import streamlit as st
 
 from ui_styles import apply_styles
-import mock_api
+from api_client import api_client
 import navigation
 import components_chat
 import components_docs
@@ -35,6 +35,14 @@ def init_state():
     ss.setdefault("theme_mode", "dark")
     ss.setdefault("dev_mode", False)
     ss.setdefault("mock_latency", 0.45)
+    
+    # Ensure user_id and thread_id exist for API calls
+    if "user_id" not in ss:
+        import uuid
+        ss["user_id"] = str(uuid.uuid4())
+    if "thread_id" not in ss:
+        import uuid
+        ss["thread_id"] = str(uuid.uuid4())
 
 
 # -------------------------------------------------------------
@@ -47,9 +55,9 @@ def main():
     init_state()
     ss = st.session_state
 
-    # Initialize mock API
-    mock_api.mock_api.latency = ss.get("mock_latency", 0.45)
-    mock_api.mock_api.init_documents(ss)
+    # Initialize API client (no-op here as it's a singleton, but good for consistency)
+    # mock_api.mock_api.latency = ss.get("mock_latency", 0.45)
+    # mock_api.mock_api.init_documents(ss)
 
     # ---------------------------------------------------------
     # Render navigation first
@@ -71,16 +79,16 @@ def main():
         col_chat, col_docs = st.columns([1.7, 1])
 
         with col_chat:
-            components_chat.render_chat(mock_api.mock_api)
+            components_chat.render_chat(api_client)
 
         with col_docs:
-            components_docs.render_documents(mock_api.mock_api, variant="sidebar")
+            components_docs.render_documents(api_client, variant="sidebar")
 
     elif page == "Documents":
-        components_docs.render_documents(mock_api.mock_api, variant="full")
+        components_docs.render_documents(api_client, variant="full")
 
     elif page == "Settings":
-        components_settings.render_settings(mock_api.mock_api)
+        components_settings.render_settings(api_client)
 
 
 # -------------------------------------------------------------

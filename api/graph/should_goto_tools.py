@@ -1,4 +1,4 @@
-from states.main_state import CourseGPTState
+from .states.main_state import CourseGPTState
 from langgraph.graph import StateGraph, START, END
 
 

@@ -158,7 +158,12 @@ def render_chat(mock_api):
             typing.markdown("<div class='typing'>CourseGPT is synthesizing context…</div>", unsafe_allow_html=True)
 
             response_text = ""
-            for chunk in mock_api.chat_response(chat_history, st.session_state):
+            # api_client.chat yields chunks (or a single chunk if not streaming)
+            for chunk in mock_api.chat(
+                prompt=user_input,
+                thread_id=st.session_state["thread_id"],
+                user_id=st.session_state["user_id"]
+            ):
                 response_text += chunk
                 ai_ph.markdown(f"<div class='msg-ai'>{response_text}</div>", unsafe_allow_html=True)
                 st.markdown(

@@ -1,10 +1,10 @@
 from IPython.display import Image, display
-from should_goto_tools import should_goto_tools
-from states.main_state import CourseGPTState
-from agents.math_agent import math_agent, math_agent_tools
-from agents.general_agent import general_agent, general_agent_tools
-from agents.router_agent import router_agent, router_agent_tools
-from agents.code_agent import code_agent, code_agent_tools
+from .should_goto_tools import should_goto_tools
+from .states.main_state import CourseGPTState
+from .agents.math_agent import math_agent, math_agent_tools
+from .agents.general_agent import general_agent, general_agent_tools
+from .agents.router_agent import router_agent, router_agent_tools
+from .agents.code_agent import code_agent, code_agent_tools
 from dotenv import load_dotenv
 from langchain.tools import tool
 from requests_html import HTMLSession

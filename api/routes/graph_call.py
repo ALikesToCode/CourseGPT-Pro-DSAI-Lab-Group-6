@@ -18,7 +18,7 @@ from services.ai_search import (
     CloudflareRequestError,
 )
 
-from course_gpt_graph.graph.graph import graph as course_graph
+from graph.graph import graph as course_graph
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

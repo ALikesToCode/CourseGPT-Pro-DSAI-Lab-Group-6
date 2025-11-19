@@ -63,13 +63,15 @@ def _render_empty_state(message: str):
     st.info(message)
 
 
-def _render_preview(mock_api, preview_id: str):
-    doc = mock_api.get_document(st.session_state, preview_id)
-    if not doc:
-        return
-    with st.expander(f"Preview — {doc.get('title', 'Untitled')}", expanded=True):
-        st.markdown(f"**Tags:** {', '.join(doc.get('tags', []) or ['None'])}")
-        st.code(doc.get("content", "")[:2000] + ("…" if len(doc.get("content", "")) > 2000 else ""), language="markdown")
+def _render_preview(api_client, preview_id: str):
+    # API doesn't have a direct "get document content" endpoint for previewing text content
+    # except via RAG context or if we download it.
+    # For now, we can try to get a view URL if it's a file.
+    url = api_client.get_file_url(preview_id)
+    if url:
+        st.markdown(f"**Preview:** [Open File]({url})")
+    else:
+        st.info("Preview not available for this document.")
 
 
 def _render_insights(docs: List[Dict]):
@@ -109,7 +111,7 @@ def _render_card_actions(doc_id: str, mock_api):
             _notify("Preview loaded", level="info")
     with cols[1]:
         if st.button("Delete document", key=f"del_{doc_id}", use_container_width=True, help="Remove this document from the current session"):
-            mock_api.delete_document(st.session_state, doc_id)
+            api_client.delete_file(doc_id)
             _notify("Document deleted", level="warning")
 
 
@@ -159,8 +161,9 @@ def render_documents(mock_api, variant: str = "full"):
     _render_documents_workspace(mock_api)
 
 
-def _render_documents_sidebar(mock_api):
-    docs = mock_api.list_documents(st.session_state)
+def _render_documents_sidebar(api_client):
+    docs_resp = api_client.list_files()
+    docs = docs_resp.get("files", [])
     container = st.container()
     with container:
         st.subheader("Documents")
@@ -180,11 +183,10 @@ def _render_documents_sidebar(mock_api):
             help="Adds the selected file to the Documents workspace.",
         ):
             content = uploaded.read()
-            mock_api.upload_document(
-                st.session_state,
-                uploaded.name,
-                "",
+            content = uploaded.read()
+            api_client.upload_file(
                 content,
+                uploaded.name,
             )
             _notify("Document uploaded — open workspace to review.")
 
@@ -204,9 +206,10 @@ def _render_documents_sidebar(mock_api):
             st.session_state["selected_page"] = "Documents"
 
 
-def _render_documents_workspace(mock_api):
+def _render_documents_workspace(api_client):
     container = st.container()
-    docs = mock_api.list_documents(st.session_state)
+    docs_resp = api_client.list_files()
+    docs = docs_resp.get("files", [])
 
     with container:
         st.markdown('<div class="cg-card doc-panel">', unsafe_allow_html=True)
@@ -233,7 +236,8 @@ def _render_documents_workspace(mock_api):
                 _render_empty_state(empty_message)
             else:
                 for d in filtered:
-                    _render_card(d.get("title", "Untitled"), d.get("snippet", ""), d.get("tags", []), d["id"], mock_api)
+                    # API returns 'key' as the ID/Name
+                    _render_card(d.get("key", "Untitled"), "", [], d["key"], api_client)
 
             preview_id = st.session_state.get("doc_preview")
             if preview_id:
@@ -287,14 +291,16 @@ def _render_upload_section(mock_api):
 
         content = uploaded.read()
         safe_title = title or uploaded.name
-        doc = mock_api.upload_document(
-            st.session_state,
-            safe_title,
-            tags,
+        content = uploaded.read()
+        # safe_title = title or uploaded.name
+        # tags are not supported in simple upload endpoint yet
+        doc = api_client.upload_file(
             content,
-            progress_callback=_progress_cb,
+            uploaded.name,
         )
-        st.session_state["doc_preview"] = doc["id"]
+        # API returns {"file": {"key": "...", ...}}
+        file_info = doc.get("file", {})
+        st.session_state["doc_preview"] = file_info.get("key")
         st.session_state["doc_title"] = ""
         st.session_state["doc_tags"] = ""
         _notify("Document uploaded!")
