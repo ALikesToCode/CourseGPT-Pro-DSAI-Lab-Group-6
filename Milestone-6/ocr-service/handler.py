@@ -211,8 +211,3 @@ class OCRService:
             })
 
         return {"words": metadata}
-
-    def _collect_metadata(self, page_payload: Any, text: str) -> Dict[str, Any]:
-        """Capture engine-specific metadata (bounding boxes, confidence arrays, etc.)."""
-        # TODO: populate metadata dictionary.
-        return {}
