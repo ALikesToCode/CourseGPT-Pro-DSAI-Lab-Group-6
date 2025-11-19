@@ -1,0 +1,315 @@
+{
+  "models": {
+    "router-llama31-peft": {
+      "source_file": "eval_results.json",
+      "eval_loss": 0.6757996082305908,
+      "eval_perplexity": 1.9722,
+      "eval_bleu": 0.4004,
+      "eval_runtime": 67.9334,
+      "eval_samples_per_second": 12.041,
+      "eval_steps_per_second": 1.516,
+      "eval_gen_len": 710.4059,
+      "eval_length_ratio": 1.1782,
+      "eval_ref_len": 606.1064,
+      "num_input_tokens_seen": 23598016
+    },
+    "router-gemma3-peft": {
+      "source_file": "trainer_state.json",
+      "eval_loss": 0.6080317497253418,
+      "eval_runtime": 15.4278,
+      "eval_samples_per_second": 53.021,
+      "eval_steps_per_second": 3.371,
+      "memory/device_reserved (GiB)": 73.37,
+      "memory/max_active (GiB)": 48.8,
+      "memory/max_allocated (GiB)": 48.8,
+      "eval_perplexity": 1.8368125317617925
+    },
+    "router-qwen3-32b-peft": {
+      "source_file": "trainer_state.json",
+      "eval_loss": 0.6277137398719788,
+      "eval_runtime": 16.6887,
+      "eval_samples_per_second": 49.015,
+      "eval_steps_per_second": 3.116,
+      "memory/device_reserved (GiB)": 54.65,
+      "memory/max_active (GiB)": 42.32,
+      "memory/max_allocated (GiB)": 42.32,
+      "eval_perplexity": 1.8733227764450215
+    }
+  },
+  "dataset": {
+    "train": {
+      "split": "train",
+      "samples": 6962,
+      "avg_route_length": 3.0403619649526,
+      "route_length_distribution": {
+        "2": 5,
+        "3": 6674,
+        "4": 280,
+        "5": 3
+      },
+      "tool_counts": {
+        "/code": 6965,
+        "/general-search": 6958,
+        "/math": 7244
+      },
+      "first_tool_distribution": {
+        "/general-search": 6846,
+        "/math": 116
+      },
+      "difficulty_distribution": {
+        "advanced": 4584,
+        "intermediate": 1570,
+        "introductory": 808
+      },
+      "tag_counts_top10": [
+        [
+          "bayesian-inference",
+          437
+        ],
+        [
+          "constrained-optimization",
+          425
+        ],
+        [
+          "causal-inference",
+          421
+        ],
+        [
+          "variational-inference",
+          420
+        ],
+        [
+          "reinforcement-learning",
+          353
+        ],
+        [
+          "quantum-computing",
+          318
+        ],
+        [
+          "admm",
+          293
+        ],
+        [
+          "representation-learning",
+          287
+        ],
+        [
+          "federated-learning",
+          280
+        ],
+        [
+          "information-theory",
+          277
+        ]
+      ],
+      "metrics_field_shapes": {
+        "primary, secondary": 6271,
+        "primary, primary_guidance, secondary, secondary_guidance": 548,
+        "primary, primary_computation, secondary, secondary_computation": 72,
+        "diagnostic, primary, secondary": 24,
+        "diagnostics, primary, secondary": 4,
+        "guidance, primary, secondary": 14,
+        "computation_guidance, primary, secondary": 24,
+        "diagnostic, diagnostic_guidance, primary, primary_guidance, secondary, secondary_guidance": 2,
+        "primary, secondary, tertiary": 2,
+        "primary, primary_description, secondary, secondary_description": 1
+      },
+      "metrics_value_types": {
+        "computation_guidance:dict": 16,
+        "computation_guidance:str": 8,
+        "diagnostic:dict": 4,
+        "diagnostic:str": 22,
+        "diagnostic_guidance:str": 2,
+        "diagnostics:str": 4,
+        "guidance:dict": 5,
+        "guidance:str": 9,
+        "primary:list": 6962,
+        "primary_computation:str": 72,
+        "primary_description:str": 1,
+        "primary_guidance:str": 550,
+        "secondary:list": 6962,
+        "secondary_computation:str": 72,
+        "secondary_description:str": 1,
+        "secondary_guidance:str": 550,
+        "tertiary:dict": 1,
+        "tertiary:str": 1
+      },
+      "avg_prompt_token_count": 126.91769606434933
+    },
+    "validation": {
+      "split": "validation",
+      "samples": 818,
+      "avg_route_length": 3.0378973105134475,
+      "route_length_distribution": {
+        "2": 1,
+        "3": 786,
+        "4": 30,
+        "5": 1
+      },
+      "tool_counts": {
+        "/code": 819,
+        "/general-search": 817,
+        "/math": 849
+      },
+      "first_tool_distribution": {
+        "/general-search": 803,
+        "/math": 15
+      },
+      "difficulty_distribution": {
+        "advanced": 529,
+        "intermediate": 197,
+        "introductory": 92
+      },
+      "tag_counts_top10": [
+        [
+          "quantum-computing",
+          55
+        ],
+        [
+          "reinforcement-learning",
+          51
+        ],
+        [
+          "bayesian-inference",
+          48
+        ],
+        [
+          "program-synthesis",
+          39
+        ],
+        [
+          "information-theory",
+          39
+        ],
+        [
+          "constrained-optimization",
+          38
+        ],
+        [
+          "variational-inference",
+          38
+        ],
+        [
+          "federated-learning",
+          38
+        ],
+        [
+          "causal-inference",
+          37
+        ],
+        [
+          "meta-learning",
+          37
+        ]
+      ],
+      "metrics_field_shapes": {
+        "primary, secondary": 733,
+        "primary, primary_guidance, secondary, secondary_guidance": 74,
+        "primary, primary_computation_guidance, secondary, secondary_computation_guidance": 1,
+        "primary, primary_computation, secondary, secondary_computation": 3,
+        "diagnostics, primary, secondary": 1,
+        "guidance, primary, secondary": 5,
+        "computation_guidance, primary, secondary": 1
+      },
+      "metrics_value_types": {
+        "computation_guidance:dict": 1,
+        "diagnostics:dict": 1,
+        "guidance:dict": 3,
+        "guidance:str": 2,
+        "primary:list": 818,
+        "primary_computation:str": 3,
+        "primary_computation_guidance:str": 1,
+        "primary_guidance:str": 74,
+        "secondary:list": 818,
+        "secondary_computation:str": 3,
+        "secondary_computation_guidance:str": 1,
+        "secondary_guidance:str": 74
+      },
+      "avg_prompt_token_count": 126.01711491442543
+    },
+    "test": {
+      "split": "test",
+      "samples": 409,
+      "avg_route_length": 3.058679706601467,
+      "route_length_distribution": {
+        "3": 385,
+        "4": 24
+      },
+      "tool_counts": {
+        "/code": 409,
+        "/general-search": 409,
+        "/math": 433
+      },
+      "first_tool_distribution": {
+        "/general-search": 404,
+        "/math": 5
+      },
+      "difficulty_distribution": {
+        "advanced": 274,
+        "intermediate": 83,
+        "introductory": 52
+      },
+      "tag_counts_top10": [
+        [
+          "constrained-optimization",
+          30
+        ],
+        [
+          "variational-inference",
+          28
+        ],
+        [
+          "reinforcement-learning",
+          26
+        ],
+        [
+          "matrix-calculus",
+          23
+        ],
+        [
+          "spectral-analysis",
+          22
+        ],
+        [
+          "causal-inference",
+          21
+        ],
+        [
+          "bayesian-inference",
+          21
+        ],
+        [
+          "deep-learning-theory",
+          21
+        ],
+        [
+          "stochastic-calculus",
+          20
+        ],
+        [
+          "bayesian-deep-learning",
+          20
+        ]
+      ],
+      "metrics_field_shapes": {
+        "primary, secondary": 371,
+        "primary, primary_guidance, secondary, secondary_guidance": 27,
+        "primary, primary_computation, secondary, secondary_computation": 6,
+        "computation_guidance, primary, secondary": 4,
+        "guidance, primary, secondary": 1
+      },
+      "metrics_value_types": {
+        "computation_guidance:dict": 4,
+        "guidance:str": 1,
+        "primary:list": 409,
+        "primary_computation:str": 6,
+        "primary_guidance:str": 27,
+        "secondary:list": 409,
+        "secondary_computation:str": 6,
+        "secondary_guidance:str": 27
+      },
+      "avg_prompt_token_count": 126.88997555012224
+    }
+  }
+}

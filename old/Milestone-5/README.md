@@ -1,0 +1,137 @@
+"""
+# Milestone 5 — Evaluation & Analysis (Overview)
+
+Welcome to the Milestone‑5 landing page. This README consolidates the key evaluation and benchmark utilities for the repository's Math, OCR, and Router components. It is intended as a developer-friendly reference with quick commands, notes, and pointers to detailed READMEs inside each subfolder.
+
+[![Milestone-5](https://img.shields.io/badge/milestone-5-info-blue)](./)
+[![Python](https://img.shields.io/badge/python-3.8%2B-brightgreen)](https://www.python.org/)
+
+---
+
+## Table of contents
+
+- [Quick Start](#quick-start)
+- [Project Summary](#project-summary)
+- [Math Agent](#math-agent)
+- [OCR Module](#ocr-module)
+- [Router Agent](#router-agent)
+- [Notes & Recommendations](#notes--recommendations)
+
+---
+
+## Quick Start
+
+Run a quick smoke test by converting benchmarks and running a short evaluation (math-agent):
+
+```powershell
+cd "d:\DSAI-Project\CourseGPT-Pro-DSAI-Lab-Group-6\Milestone-5\math-agent"
+pip install -r requirements.txt  # if present
+python convert_benchmarks_to_jsonl.py -i benchmarks_dataset -o combined_benchmarks.jsonl
+# then run a small evaluation (replace placeholders)
+python evaluate_vertex_benchmarks.py --project YOUR_PROJECT_ID --region us-central1 --endpoint projects/YOUR_PROJECT_ID/locations/us-central1/endpoints/ENDPOINT_ID --input combined_benchmarks.jsonl --output results.jsonl --max-examples 10
+```
+
+Open the subfolder READMEs for implementation details (they contain flags, GCS resume instructions and examples).
+
+---
+
+## Project Summary
+
+This milestone focuses on evaluation, benchmarking and diagnostics:
+
+- Math Agent: benchmark conversion, Vertex inference runner and metrics computation.
+- OCR Module: evaluation scaffolding for OCR extraction quality and type detection.
+- Router Agent: schema-aware scoring, hard benchmark generation and evaluation tooling.
+
+---
+
+## Math Agent
+
+Location: `math-agent/`
+
+Purpose: convert raw benchmark files into a single `combined_benchmarks.jsonl`, run inference against a deployed Vertex endpoint, and compute metrics (exact‑match, numeric equality) when labels exist.
+
+Key files:
+
+- `benchmarks_dataset/` — raw benchmark files organized by difficulty.
+- `convert_benchmarks_to_jsonl.py` — create `combined_benchmarks.jsonl`.
+- `evaluate_vertex_benchmarks.py` — Vertex evaluator with batching, periodic flushes and resumable checkpoints to GCS.
+- `compute_metrics.py` — compute accuracy metrics from labeled results.
+
+Quick usage:
+
+```bash
+python convert_benchmarks_to_jsonl.py -i benchmarks_dataset -o combined_benchmarks.jsonl
+
+python evaluate_vertex_benchmarks.py \
+  --project YOUR_PROJECT_ID \
+  --region us-central1 \
+  --endpoint projects/YOUR_PROJECT_ID/locations/us-central1/endpoints/ENDPOINT_ID \
+  --input combined_benchmarks.jsonl \
+  --output results.jsonl
+```
+
+See `math-agent/EVALUATE.md` for advanced examples (batched runs, flush/upload options and resume behavior).
+
+---
+
+## OCR Module
+
+Location: `ocr-module/`
+
+Purpose: scaffolding for OCR evaluation — document type detection, text presence checks, and extraction quality metrics.
+
+Key file:
+
+- `evaluate_ocr.py` — skeleton script for automated OCR evaluation. Implement test harnesses and metrics logging here.
+
+Next steps / expectations:
+
+- Build an evaluation dataset (kept outside git or in a separate data folder) and implement `evaluate_ocr.py` to report CER/WER.
+- Save CSV/JSON results so the router and benchmark tooling can reference OCR quality metrics.
+
+---
+
+## Router Agent
+
+Location: `router-agent/`
+
+Purpose: evaluate router adapters, create hard benchmark sets, and perform schema-aware scoring and pass/fail checks.
+
+Key files and utilities:
+
+- `collect_router_metrics.py` — aggregate HF trainer artifacts & dataset stats.
+- `schema_score.py` — per-field scoring of router outputs (order, tool precision/recall, metrics-key retention).
+- `generate_router_benchmark.py` — create stress / hard benchmarks.
+- `router_benchmark_runner.py` — automated runner that compares metrics against thresholds in `router_benchmark_thresholds.json`.
+
+Examples:
+
+```bash
+python router-agent/generate_router_benchmark.py --source ../Milestone-3/router-agent-scripts/data/vertex_tuning/test.jsonl --out router-agent/benchmarks/deep_router_benchmark.jsonl --stats router-agent/benchmarks/deep_router_benchmark_stats.json
+
+python router-agent/schema_score.py --gold router-agent/benchmarks/router_benchmark_hard.jsonl --pred <router_predictions.jsonl> --out router-agent/benchmarks/router_benchmark_hard_eval.json
+```
+
+Notes on limitations:
+
+- BLEU and similar surface metrics can undercount semantically-correct but syntactically-different router plans.
+- Watch for canonical-route bias and optional schema-fields that frequently cause post-processing errors.
+
+---
+
+## Notes & Recommendations
+
+- Ensure `gcloud` / ADC credentials are available when running Vertex-related scripts. Use `gcloud auth application-default login`.
+- Use `--max-examples` for small smoke tests before running large jobs.
+- Store large benchmark outputs and checkpoints in GCS to enable resumable runs and safe uploads.
+
+If you'd like, I can:
+
+- add a linked Table of Contents with per-file anchors,
+- expand any subfolder README with a developer quickstart, or
+- create PowerShell helper scripts for common tasks (convert, evaluate, score).
+
+---
+
+Prepared by automation — consolidated Milestone‑5 README for quick navigation.
