@@ -12,7 +12,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent / "benchmarks_dataset"
 OUT = Path(__file__).resolve().parent / "combined_benchmarks_equal.jsonl"
-TOTAL = 650
+TOTAL = 1700
 
 SYSTEM_PROMPT = (
     "You are a helpful math assistant. You are given a question which may have multiple parts and "
@@ -87,6 +87,14 @@ def main():
                         # skip malformed lines
                         continue
                     qtext = build_question_text(obj)
+                    # try to extract an answer from common keys present in the source items
+                    answer = obj.get("answer", obj.get("answers"))
+                    if answer is None:
+                        for _k in ("label", "correct", "target", "answer_index"):
+                            if _k in obj:
+                                answer = obj[_k]
+                                break
+
                     record = {
                         "body": {
                             "messages": [
@@ -95,6 +103,7 @@ def main():
                             ]
                         },
                         "temperature": 0,
+                        "answer": answer,
                     }
                     fout.write(json.dumps(record, ensure_ascii=False) + "\n")
                     taken += 1
