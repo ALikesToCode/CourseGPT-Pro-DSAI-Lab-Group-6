@@ -6,10 +6,12 @@ import requests
 from ..states.main_state import CourseGPTState
 from dotenv import load_dotenv
 import os
-from tools.general_agent_handoff import general_agent_handoff
+from api.tools.code_agent_handoff import code_agent_handoff
+from langchain_openai import ChatOpenAI
+from api.config import get_settings
 load_dotenv()
 
-general_agent_tools = [general_agent_handoff]
+general_agent_tools = [code_agent_handoff]
 
 general_agent_prompt = """You are a general-purpose assistant that helps users with project planning, coordination, and integration tasks.
 When given a request, determine if any of the available tools can help you accomplish the task.
@@ -27,11 +29,26 @@ Answer: <your_answer>
 """
 
 
+from api.services.gemini_client import Gemini3Client
+
 def general_agent(state: CourseGPTState):
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        api_key=os.getenv("GOOGLE_API_KEY")
-    )
+    settings = get_settings()
+
+    if settings.general_agent_url:
+        llm = ChatOpenAI(
+            base_url=settings.general_agent_url,
+            api_key=settings.general_agent_api_key or "dummy",
+            model=settings.general_agent_model or "default",
+            temperature=0
+        )
+    else:
+        # Default to Gemini 3 Pro
+        llm = Gemini3Client(
+            api_key=settings.google_api_key,
+            model="gemini-3-pro-preview"
+        )
+        llm.enable_google_search()
+
     llm.bind_tools(general_agent_tools, parallel_tool_calls=False)
 
     system_message = SystemMessage(content=general_agent_prompt)

@@ -44,10 +44,10 @@ graph.add_node("code_agent_tools", ToolNode(code_agent_tools))
 graph.add_node("general_agent_tools", ToolNode(general_agent_tools))
 graph.add_node("math_agent_tools", ToolNode(math_agent_tools))
 
+from .route_after_tools import route_after_tools
+
 graph.add_edge(START, "router_agent")
-graph.add_edge("router_agent", "code_agent")
-graph.add_edge("router_agent", "general_agent")
-graph.add_edge("router_agent", "math_agent")
+# Removed static edges to allow conditional routing via tools
 
 graph.add_conditional_edges(
     'router_agent',
@@ -58,7 +58,17 @@ graph.add_conditional_edges(
     }
 )
 
-graph.add_edge('router_agent_tools', 'router_agent')
+graph.add_conditional_edges(
+    'router_agent_tools',
+    route_after_tools,
+    {
+        "general_agent": "general_agent",
+        "code_agent": "code_agent",
+        "math_agent": "math_agent",
+        "router_agent": "router_agent",
+        END: END
+    }
+)
 
 
 graph.add_conditional_edges(

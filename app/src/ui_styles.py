@@ -195,6 +195,41 @@ html.dark-mode .stApp .css-1adrfps, html.dark-mode .stApp .stMarkdown, html.dark
 html.dark-mode .doc-card, html.dark-mode .cg-card { box-shadow: 0 2px 10px rgba(0,0,0,0.4) !important; }
 
 /* Keep CSS minimal — shadcn-ui will style buttons/inputs when present */
+
+/* Fix for weird typing/interaction: ensure inputs have proper background and text color in all states */
+.stTextInput input, .stTextArea textarea {
+    color: #0B1220 !important;
+    background-color: #FFFFFF !important;
+}
+
+/* Dark mode overrides */
+html.dark-mode .stTextInput input, html.dark-mode .stTextArea textarea {
+    color: #E6EEF8 !important;
+    background-color: rgba(255,255,255,0.05) !important; /* Slightly lighter for better visibility */
+    caret-color: #E6EEF8 !important; /* Ensure cursor is visible */
+}
+
+/* Fix for "some elements looking wrong" - ensure all text in dark mode is readable */
+html.dark-mode, html.dark-mode .stApp, html.dark-mode p, html.dark-mode h1, html.dark-mode h2, html.dark-mode h3, html.dark-mode h4, html.dark-mode h5, html.dark-mode h6, html.dark-mode span, html.dark-mode div, html.dark-mode label, html.dark-mode .stMarkdown {
+    color: #E6EEF8 !important;
+}
+
+/* Specific fix for chat input area in dark mode */
+html.dark-mode .stTextArea>div>div>textarea {
+    background-color: #1F2937 !important; /* Dark gray background */
+    color: #F3F4F6 !important; /* Light gray text */
+    border: 1px solid #374151 !important;
+}
+
+/* Fix for buttons in dark mode */
+html.dark-mode .stButton>button {
+    background-color: #374151 !important;
+    color: #F3F4F6 !important;
+    border: 1px solid #4B5563 !important;
+}
+html.dark-mode .stButton>button:hover {
+    background-color: #4B5563 !important;
+}
 """
 
 

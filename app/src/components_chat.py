@@ -138,7 +138,7 @@ def render_chat(mock_api):
         if prefill:
             st.session_state["chat_input"] = prefill
 
-        with st.form("chat_form", clear_on_submit=False):
+        with st.form("chat_form", clear_on_submit=True):
             user_input = ui.textarea(
                 "Message CourseGPT",
                 key="chat_input",
@@ -151,7 +151,7 @@ def render_chat(mock_api):
         if submitted and user_input and user_input.strip():
             chat_history.append({"sender": "user", "text": user_input})
             st.session_state["chat_history"] = chat_history
-            st.session_state["chat_input"] = ""
+            # st.session_state["chat_input"] = ""  # Handled by clear_on_submit=True
 
             ai_ph = st.empty()
             typing = st.empty()

@@ -6,7 +6,9 @@ import requests
 from ..states.main_state import CourseGPTState
 from dotenv import load_dotenv
 import os
-from tools.general_agent_handoff import general_agent_handoff
+from api.tools.general_agent_handoff import general_agent_handoff
+from langchain_openai import ChatOpenAI
+from api.config import get_settings
 
 load_dotenv()
 
@@ -29,14 +31,26 @@ Answer: <your_answer>
 """
 
 
+from api.services.gemini_client import Gemini3Client
+
 def math_agent(state: CourseGPTState):
 
-    # TODO: replace with your custom fine tuned model or different LLM as needed
+    settings = get_settings()
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        api_key=os.getenv("GOOGLE_API_KEY")
-    )
+    if settings.math_agent_url:
+        llm = ChatOpenAI(
+            base_url=settings.math_agent_url,
+            api_key=settings.math_agent_api_key or "dummy",
+            model=settings.math_agent_model or "default",
+            temperature=0
+        )
+    else:
+        # Default to Gemini 3 Pro
+        llm = Gemini3Client(
+            api_key=settings.google_api_key,
+            model="gemini-3-pro-preview"
+        )
+
     llm.bind_tools(math_agent_tools, parallel_tool_calls=False)
 
     system_message = SystemMessage(content=math_agent_prompt)

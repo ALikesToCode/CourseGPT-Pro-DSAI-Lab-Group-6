@@ -47,19 +47,40 @@ class Settings:
         self.cloudflare_r2_endpoint = _env("CLOUDFLARE_R2_ENDPOINT", "CLOUDFLARE-R2-ENDPOINT")
         self.cloudflare_r2_token = _env("CLOUDFLARE_R2_TOKEN", "CLOUDFLARE-R2-TOKEN")
 
+        # Agent Configuration
+        self.router_agent_url = _env("ROUTER_AGENT_URL")
+        self.router_agent_api_key = _env("ROUTER_AGENT_API_KEY")
+        self.router_agent_model = _env("ROUTER_AGENT_MODEL")
+
+        self.code_agent_url = _env("CODE_AGENT_URL")
+        self.code_agent_api_key = _env("CODE_AGENT_API_KEY")
+        self.code_agent_model = _env("CODE_AGENT_MODEL")
+
+        self.math_agent_url = _env("MATH_AGENT_URL")
+        self.math_agent_api_key = _env("MATH_AGENT_API_KEY")
+        self.math_agent_model = _env("MATH_AGENT_MODEL")
+
+        self.general_agent_url = _env("GENERAL_AGENT_URL")
+        self.general_agent_api_key = _env("GENERAL_AGENT_API_KEY")
+        self.general_agent_model = _env("GENERAL_AGENT_MODEL")
+
+        self.google_api_key = _env("GOOGLE_API_KEY", "GEMINI_API_KEY")
+
         # Basic validation for required settings so failures happen on startup rather than at runtime.
+        # We make R2 optional to allow the API to start even if R2 is not configured.
         required = {
-            "CLOUDFLARE_ACCESS_KEY": self.cloudflare_access_key,
-            "CLOUDFLARE_SECRET_ACCESS_KEY": self.cloudflare_secret_access_key,
-            "CLOUDFLARE_R2_BUCKET_NAME": self.cloudflare_r2_bucket,
-            "CLOUDFLARE_R2_ENDPOINT": self.cloudflare_r2_endpoint,
+            # "CLOUDFLARE_ACCESS_KEY": self.cloudflare_access_key,
+            # "CLOUDFLARE_SECRET_ACCESS_KEY": self.cloudflare_secret_access_key,
+            # "CLOUDFLARE_R2_BUCKET_NAME": self.cloudflare_r2_bucket,
+            # "CLOUDFLARE_R2_ENDPOINT": self.cloudflare_r2_endpoint,
         }
         missing = [name for name, value in required.items() if not value]
         if missing:
-            raise RuntimeError(
-                f"Missing required Cloudflare R2 settings: {', '.join(missing)}. "
-                "Double-check your .env file."
-            )
+            print(f"Warning: Missing R2 settings: {', '.join(missing)}. File uploads will not work.")
+            # raise RuntimeError(
+            #     f"Missing required Cloudflare R2 settings: {', '.join(missing)}. "
+            #     "Double-check your .env file."
+            # )
 
     @property
     def has_ai_search(self) -> bool:
