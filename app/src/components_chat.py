@@ -105,15 +105,27 @@ def _render_messages(chat_history: List[Dict]):
             route = ""
             handoff = ""
             if isinstance(rd.get("content"), dict):
-                route = rd["content"].get("route_plan", "")
-                handoff = rd["content"].get("handoff_plan", "")
-            st.markdown(
-                f"<div class='msg-ai' style='background:#0f1724;opacity:0.92'>"
-                f"<strong>Router handoff</strong><br/>Tool: <code>{tool}</code><br/>"
-                f"Route: <code>{route}</code><br/>Handoff: <code>{handoff}</code>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+                content = rd["content"]
+                handoff_target = content.get("handoff", "unknown agent")
+                task_summary = content.get("task_summary", "")
+                route_rationale = content.get("route_rationale", "")
+                
+                st.markdown(
+                    f"<div class='msg-ai' style='background:#0f1724;opacity:0.92;border-left: 3px solid #3b82f6; padding: 10px; margin-bottom: 10px;'>"
+                    f"<strong>🔄 Handoff to {handoff_target.replace('_', ' ').title()}</strong><br/>"
+                    f"<span style='color:#94a3b8;font-size:0.9em'>{task_summary}</span><br/>"
+                    f"<div style='margin-top:5px;font-size:0.85em;color:#cbd5e1'><em>Rationale: {route_rationale}</em></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"<div class='msg-ai' style='background:#0f1724;opacity:0.92'>"
+                    f"<strong>Router handoff</strong><br/>Tool: <code>{tool}</code>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
             with st.expander("Router payload (debug)", expanded=False):
                 st.code(json.dumps(rd, indent=2), language="json")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -154,6 +166,7 @@ def render_chat(mock_api):
         _render_quick_prompts()
         st.markdown("---")
 
+        # Scrollable chat window
         # Create a placeholder for messages to allow re-rendering on submit
         chat_placeholder = st.empty()
         with chat_placeholder.container():
@@ -164,7 +177,9 @@ def render_chat(mock_api):
         if prefill:
             st.session_state["chat_input"] = prefill
 
-        st.markdown('<div class="composer-sticky" id="composer-wrapper">', unsafe_allow_html=True)
+        # Sticky composer container
+        st.markdown('<div class="composer-sticky">', unsafe_allow_html=True)
+        st.markdown('<div id="composer-wrapper">', unsafe_allow_html=True)
         st.markdown("#### Message CourseGPT")
         with st.form("chat_form", clear_on_submit=True):
             user_input = ui.textarea(
@@ -175,7 +190,7 @@ def render_chat(mock_api):
                 label_visibility="collapsed",
             )
             submitted = st.form_submit_button("Send message", key="send_button", width="stretch", help="Submit your prompt to CourseGPT")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div></div>", unsafe_allow_html=True)
 
         if submitted and user_input and user_input.strip():
             chat_history.append({"sender": "user", "text": user_input})

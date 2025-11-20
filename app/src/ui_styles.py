@@ -230,6 +230,59 @@ html.dark-mode .stButton>button {
 html.dark-mode .stButton>button:hover {
     background-color: #4B5563 !important;
 }
+/* Sticky Footer & Full Viewport Layout */
+
+/* Remove default Streamlit padding to allow full viewport usage */
+.block-container {
+    padding-top: 2rem !important;
+    padding-bottom: 0 !important;
+    max-width: 100% !important;
+}
+
+/* Main chat container */
+.chat-column {
+    display: flex;
+    flex-direction: column;
+    height: 85vh; /* Safer height to ensure visibility */
+    position: relative;
+}
+
+/* Scrollable message area */
+.chat-window {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 120px; /* Space for the sticky composer */
+    padding-right: 10px; /* Avoid scrollbar overlap */
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Sticky composer at the bottom */
+.composer-sticky {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-light);
+    padding: 20px;
+    border-top: 1px solid rgba(0,0,0,0.05);
+    z-index: 100;
+    backdrop-filter: blur(10px);
+}
+
+/* Adjust composer width to match container */
+.composer-sticky > div {
+    max-width: var(--container-width);
+    margin: 0 auto;
+}
+
+/* Dark mode adjustments for sticky composer */
+html.dark-mode .composer-sticky {
+    background: rgba(15, 17, 21, 0.9);
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+
 """
 
 

@@ -130,9 +130,14 @@ class MockAPI:
         # Build a mock answer in chunks
         base_answer = (
             f"CourseGPT analysis of: '{user_msg[:80]}'\n\n"
-            "Key points:\n1) Understand the core concept.\n2) Provide examples.\n3) Suggest reading.\n\n"
-            "References:\n- Lecture notes\n- Suggested exercises\n\n" 
-            "If you want, I can generate a study plan or extract flashcards from this document."
+            "Here is the code you requested:\n\n"
+            "```python\n"
+            "def factorial(n):\n"
+            "    if n == 0:\n"
+            "        return 1\n"
+            "    return n * factorial(n-1)\n"
+            "```\n\n"
+            "This function calculates the factorial recursively."
         )
 
         words = base_answer.split()
