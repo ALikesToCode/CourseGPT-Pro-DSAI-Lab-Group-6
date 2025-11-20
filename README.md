@@ -78,14 +78,19 @@ CourseGPT adopts the agentic design, leveraging LangGraph to finely control how 
 - **LangGraph & LangChain:**
   - LangChain provides tools, chains, and utilities to work with LLMs.
   - LangGraph extends this by enabling graph-based workflows, where agents (nodes) are connected by edges with conditional logic.
+  - Why chosen: LangGraph offers explicit, developer-friendly graph-based orchestration and conditional routing that maps directly to our multi-agent design. Compared with Google ADK, LangGraph (with LangChain) provides lighter-weight, language-agnostic integration for custom prompt/tool chains and faster iteration for bespoke routing logic; Google ADK is more opinionated and tightly integrated with Google's ecosystem, which can be advantageous in some deployments but is less flexible for custom agent graphs and rapid experimentation.
+
 - **FastAPI (Backend):**
   - An asynchronous web framework in Python.
   - Ideal for high-performance JSON APIs.
   - Supports async endpoints, which is important for LLM inference calls.
+  - Why chosen: FastAPI is simple to set up, supports async I/O and automatic OpenAPI docs, and integrates smoothly with Python LLM clients — enabling rapid backend development and non-blocking model calls.
+
 - **Streamlit (Frontend):**
   - A Python-based rapid prototyping framework for web apps.
   - Allows quick development of interactive UIs.
   - Well-suited for building chat-like interfaces and visualizing results without complex frontend code.
+  - Why chosen: Streamlit enables rapid UI prototyping with minimal frontend code, letting us build a usable chat interface quickly for demos and user testing without a separate frontend stack.
 
 These technologies align well with the project’s needs: modular backend orchestration, fast API endpoints, and a simple interactive frontend.
 
