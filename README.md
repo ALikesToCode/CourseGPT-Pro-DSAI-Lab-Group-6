@@ -3,14 +3,8 @@
 ## Title Page
 
 **Project Title:** CourseGPT — A LangGraph-Based Student Helper Chatbot  
-**Student/Team Details:** _[Add Your Name / Team Name]_  
-**Institution/Department Details:** _[University / Department Information]_  
-**Date:** _[Submission Date]_  
 
 ---
-
-![CourseGPT Cover](assets/coursegpt_cover.png)
-
 
 ## 1. Abstract
 
