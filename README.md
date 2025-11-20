@@ -229,7 +229,7 @@ Selects the appropriate specialized agent to handle an incoming request.
 ### 5.1.2. Math Agent
 
 **Overview**  
-The Math Agent solves mathematical problems with detailed, step-by-step reasoning and clear final answers. For Milestone-4 experiments, the agent uses a mid-sized instruction-tuned model (**Gemma-3-4B-IT**) with LoRA adapters trained on the **MathX-5M** dataset, balancing performance and compute efficiency.
+The Math Agent solves mathematical problems with detailed, step-by-step reasoning and clear final answers. For Milestone-4 experiments, the agent uses a mid-sized instruction-tuned model (**Gemma-3-27B-IT**) with LoRA adapters trained on the **MathX-5M** dataset, balancing performance and compute efficiency.
 
 **Key Responsibilities**
 
@@ -240,7 +240,7 @@ The Math Agent solves mathematical problems with detailed, step-by-step reasonin
 
 **Modeling Choices & Dataset**
 
-- **Backbone:** `google/gemma-3-4b-it` (primary); alternatives tested include Qwen3-32B and Llama models.
+- **Backbone:** `google/gemma-3-27b-it` (primary); alternatives tested include Qwen3-32B and Llama models.
 - **Training Dataset:** `XenArcAI/MathX-5M` — large-scale, step-wise math reasoning dataset.  
   Loaded in streaming/subset mode for efficiency.
 
