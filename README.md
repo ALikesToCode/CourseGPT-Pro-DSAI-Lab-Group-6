@@ -1,10 +1,5 @@
 # CourseGPT: A LangGraph-Based Student Helper Chatbot
 
-## Title Page
-
-**Project Title:** CourseGPT — A LangGraph-Based Student Helper Chatbot  
-
----
 
 ## 1. Abstract
 
@@ -347,8 +342,37 @@ Several rounds of tuning were applied:
 ## 6. Evaluation & Analysis (Milestone 5)
 
 ### 6.1. Testing Strategy
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/refs/heads/main/assets/agentic_evaluation.png?raw=true" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
+</p>
 
-Below are representative comparison plots produced by the Math Agent evaluation tooling. These are saved under `Milestone-5/math-agent/plots/` when you run the plotting utility.
+This project uses a two-stage evaluation and model selection strategy focused on objective, reproducible judgments of reasoning and correctness. Models are first trained (or adapted via LoRA) on supervised data and candidate checkpoints are produced during training. Instead of relying solely on human labels or single automatic metrics, we use an "LLM-as-a-judge" pipeline to efficiently and consistently evaluate candidate models at scale.
+
+Key points of the LLM-as-a-judge workflow:
+
+- **Dataset split & sampling:** Held-out evaluation sets are created from task-specific data (math problems, coding prompts, etc.). For each problem we sample multiple model generations per checkpoint (different seeds/temperatures where appropriate) to capture variance in behavior.
+
+- **Structured rubrics:** For each task category we design compact, structured rubrics with clear criteria (e.g., final-answer correctness, step-by-step reasoning quality, code executability, safety). Rubrics return structured outputs (scalar scores, pass/fail flags, and short diagnostic notes) encoded as machine-readable JSON so the judge LLM's output is easy to parse and aggregate.
+
+- **Reference judge model:** A higher-capacity, stable reference LLM (or an ensemble of reliable judges) is prompted to score each candidate output against the rubric. Judge prompts include explicit instructions, examples of good/bad answers, and the JSON schema to return. We keep judge temperature low to favour deterministic, reproducible scores.
+
+- **Scoring modes:** We use both scalar/boolean scoring and pairwise comparisons where helpful. Pairwise judgments are particularly effective for fine-grained ranking between near-equal checkpoints; scalar scores work well for threshold-based filtering and checkpoint selection.
+
+- **Calibration & validation:** Periodically we calibrate the automated judge against a small human-labeled set to detect systematic biases. If mismatches are found, we refine the rubric, add clarifying examples to the judge prompt, or include a lightweight human-in-the-loop review for borderline cases.
+
+- **Use of judge outputs:** Aggregated judge scores are used for:
+  - Ranking checkpoints and selecting the best-performing model versions for production.
+  - Curation of training data: poor-quality outputs are filtered or re-labeled before further fine-tuning rounds.
+  - Reward signal estimation for later RL-based refinement (when applicable), by using judge scores to form a reward model or to bootstrap preference datasets.
+
+- **Statistical checks & human spot-checks:** We apply simple statistical tests (e.g., bootstrap confidence intervals) to ensure that observed differences between checkpoints are significant. We also perform targeted human spot-checks for safety and failure modes that automated judges may miss.
+
+This LLM-as-a-judge approach lets us evaluate complex reasoning and code-generation quality at a scale that would be impractical with full human annotation, while retaining human oversight where it matters most. It also integrates naturally with our LoRA-based fine-tuning experiments: judge-driven ranking identifies the best adapter checkpoints and provides automated diagnostics that guide further prompt and data engineering.
+
+
+### 6.2 Math Agent
+
+Below are representative comparison plots produced by the Math Agent evaluation tooling.
 
 <p align="center">
   <img src="assets/compare.correct_by_model.png" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
@@ -364,17 +388,6 @@ The comparison visuals (correct-answer percentage, mean ratings and distribution
 
 Recommendation: adopt Gemma (LoRA adapters) as the primary Math Agent for production and continued tuning due to its balance of performance and deployability; reserve Qwen3‑32B for targeted high‑resource evaluations or final-stage comparisons when maximum absolute performance is required.
 
-
-### 6.3. Comparative Analysis
-
-The CourseGPT agentic approach was compared against a baseline:
-
-- **Baseline:** Single LLM prompt for all queries (no explicit routing, no specialized agents).
-- **Findings:**
-  - Baseline model sometimes mixed math reasoning with conversational fluff.
-  - Code answers were less consistent and sometimes lacked proper structure.
-  - CourseGPT provided more reliable math and programming results due to specialization.
-  - The agent-based architecture also offered better modularity and made debugging and improvements easier (e.g., only improve the Math Agent without changing others).
 
 
 ---
