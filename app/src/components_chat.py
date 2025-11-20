@@ -115,10 +115,11 @@ def render_chat(mock_api):
     """Render the refreshed chat workspace with metrics and quick prompts."""
 
     chat_history: List[Dict] = st.session_state.get("chat_history", [])
+    st.session_state.setdefault("chat_input", "")
 
     container = st.container()
     with container:
-        st.markdown('<div class="cg-card chat-column">', unsafe_allow_html=True)
+        st.markdown('<div class="cg-card chat-column" id="chat-card">', unsafe_allow_html=True)
         header_cols = st.columns([3, 1])
         with header_cols[0]:
             st.subheader("CourseGPT Workspace")
@@ -137,21 +138,23 @@ def render_chat(mock_api):
 
         _render_messages(chat_history)
 
-        # Input row
+        # Input row pinned to bottom via CSS/JS scroll helper
         prefill = st.session_state.pop("chat_prefill", None)
         if prefill:
             st.session_state["chat_input"] = prefill
 
+        st.markdown('<div class="composer-sticky" id="composer-wrapper">', unsafe_allow_html=True)
         st.markdown("#### Message CourseGPT")
         with st.form("chat_form", clear_on_submit=True):
             user_input = ui.textarea(
-                "",
+                "Message CourseGPT",
                 key="chat_input",
-                value=st.session_state.get("chat_input", ""),
                 placeholder="Ask a question, request a study plan, or paste a snippet to analyze...",
                 help="Messages stay local to this Streamlit session.",
+                label_visibility="collapsed",
             )
             submitted = st.form_submit_button("Send message", key="send_button", use_container_width=True, help="Submit your prompt to CourseGPT")
+        st.markdown("</div>", unsafe_allow_html=True)
 
         if submitted and user_input and user_input.strip():
             chat_history.append({"sender": "user", "text": user_input})

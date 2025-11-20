@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# Minimal Notion-like styles: only layout, vars, cards, and bubbles.
+# Minimal Notion-like styles: only layout, vars, cards, bubbles, plus sticky composer.
 BASE_CSS = r"""
 :root{
   --bg-light: #FAFAFB;
@@ -90,7 +90,7 @@ input:focus, textarea:focus, .stTextInput:focus { outline: 2px solid rgba(87,99,
 .doc-card{ border-radius:8px; padding:14px; background:var(--card-light); margin-bottom:12px; }
 .doc-card:hover{ transform:translateY(-4px); box-shadow:0 6px 20px rgba(12,18,24,0.06); }
 
-.chat-window{ display:flex; flex-direction:column; gap:10px; max-height:68vh; overflow:auto; }
+.chat-window{ display:flex; flex-direction:column; gap:10px; max-height:52vh; overflow:auto; padding-bottom:12px; }
 .msg-user{ align-self:flex-end; background:linear-gradient(90deg,var(--accent),#6B64E6); color:white; padding:10px 14px; border-radius:14px; max-width:75%; }
 .msg-ai{ align-self:flex-start; background:#F3F4F6; color:#111827; padding:10px 14px; border-radius:14px; max-width:75%; }
 .typing{ font-size:13px; color:var(--muted); margin-top:6px; }

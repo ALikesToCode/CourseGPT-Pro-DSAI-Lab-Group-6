@@ -115,7 +115,7 @@ def _render_card_actions(doc_id: str, api_client):
             _notify("Document deleted", level="warning")
 
 
-def _render_card(title: str, snippet: str, tags: List[str], doc_id: str, mock_api):
+def _render_card(title: str, snippet: str, tags: List[str], doc_id: str, api_client):
     if st_card is not None:
         try:
             with st_card(title=title, text=snippet):
@@ -256,6 +256,10 @@ def _render_documents_workspace(api_client):
 
 
 def _render_upload_section(api_client):
+    if st.session_state.pop("reset_doc_inputs", False):
+        st.session_state["doc_title"] = ""
+        st.session_state["doc_tags"] = ""
+
     st.markdown("#### Upload a document")
     st.caption("Accepted formats: PDF, Markdown, and plain text. Files stay within this local session.")
 
@@ -298,8 +302,7 @@ def _render_upload_section(api_client):
             )
             file_info = doc.get("file", {})
             st.session_state["doc_preview"] = file_info.get("key")
-            st.session_state["doc_title"] = ""
-            st.session_state["doc_tags"] = ""
+            st.session_state["reset_doc_inputs"] = True
             _notify("Document uploaded!")
         except Exception as exc:
             st.error(f"Upload failed: {exc}")
