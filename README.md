@@ -309,6 +309,43 @@ Responds to conceptual, theoretical, analytical, and general academic or convers
 ---
 
 
+### 5.1.5. OCR Integration
+
+
+Optical Character Recognition (OCR) service enables CourseGPT to understand and respond to questions about uploaded documents. Students often provide scanned PDFs, certificates, handwritten notes, textbook pages, or images containing text. These cannot be interpreted by an LLM unless the content is converted into machine-readable text.
+
+To address this, a standalone OCR microservice was added using EasyOCR and exposed through a new FastAPI route (POST /ocr). When a user uploads a PDF through the /chat endpoint, the backend performs the following steps:
+
+The PDF file is received in graph_call.py. The file bytes are sent to the OCR using _call_remote_ocr().
+The OCR service:
+
+- Detects text on each page
+- Extracts readable text
+- Computes a confidence score
+- Returns bounding-box metadata for each detected word
+
+If OCR fails, the system uses a fallback PDF parser (PyPDF).
+
+The extracted text is injected into the LangGraph pipeline as uploaded_file["text"], allowing the LLM to reason about the content.
+
+**Why this was necessary:**
+Without OCR, students could not upload assignments, question papers, scanned problem statements, or study materials. This feature transforms CourseGPT into a document-aware assistant capable of answering:
+
+
+**Technology Stack Used:**
+
+- EasyOCR for text extraction
+- pdf2image + Pillow for rendering PDF pages
+- python-docx for DOCX support
+- langdetect for optional language detection
+- FastAPI for /ocr endpoint
+
+**Impact**
+
+This enhancement significantly expands real-world usability by enabling CourseGPT to process non-text learning materials. The OCR service now acts as a preprocessing layer that converts uploaded documents into clean text, which is seamlessly integrated into the RAG + LangGraph workflow.
+
+---
+
 ### 5.2. Building the Graph
 
 The LangGraph workflow is built as follows:
