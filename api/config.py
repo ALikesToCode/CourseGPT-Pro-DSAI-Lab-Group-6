@@ -65,6 +65,7 @@ class Settings:
         self.general_agent_model = _env("GENERAL_AGENT_MODEL")
 
         self.google_api_key = _env("GOOGLE_API_KEY", "GEMINI_API_KEY")
+        self.gemini_model = _env("GEMINI_MODEL", default="gemini-3-pro-preview")
 
         # Basic validation for required settings so failures happen on startup rather than at runtime.
         # We make R2 optional to allow the API to start even if R2 is not configured.

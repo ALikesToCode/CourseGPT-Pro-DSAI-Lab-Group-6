@@ -45,7 +45,7 @@ def general_agent(state: CourseGPTState):
         # Default to Gemini 3 Pro
         llm = Gemini3Client(
             api_key=settings.google_api_key,
-            model="gemini-3-pro-preview"
+            model=settings.gemini_model
         )
         llm.enable_google_search()
 
