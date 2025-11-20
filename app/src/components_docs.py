@@ -106,11 +106,11 @@ def _render_insights(docs: List[Dict]):
 def _render_card_actions(doc_id: str, api_client):
     cols = st.columns(2)
     with cols[0]:
-        if st.button("Preview document", key=f"view_{doc_id}", use_container_width=True, help="Open a read-only preview in this workspace"):
+        if st.button("Preview document", key=f"view_{doc_id}", width="stretch", help="Open a read-only preview in this workspace"):
             st.session_state["doc_preview"] = doc_id
             _notify("Preview loaded", level="info")
     with cols[1]:
-        if st.button("Delete document", key=f"del_{doc_id}", use_container_width=True, help="Remove this document from the current session"):
+        if st.button("Delete document", key=f"del_{doc_id}", width="stretch", help="Remove this document from the current session"):
             api_client.delete_file(doc_id)
             _notify("Document deleted", level="warning")
 
@@ -205,7 +205,7 @@ def _render_documents_sidebar(api_client):
         else:
             st.info("No recent uploads yet. Use the uploader above to add your first document.")
 
-        if st.button("Go to document workspace", use_container_width=True, help="Open the full-page document manager"):
+        if st.button("Go to document workspace", width="stretch", help="Open the full-page document manager"):
             st.session_state["selected_page"] = "Documents"
 
 
@@ -288,7 +288,7 @@ def _render_upload_section(api_client):
     submitted = ui.button(
         "Upload document",
         key="upload_btn",
-        use_container_width=True,
+        width="stretch",
         disabled=upload_disabled,
         help="Select a file first to activate this button.",
     )

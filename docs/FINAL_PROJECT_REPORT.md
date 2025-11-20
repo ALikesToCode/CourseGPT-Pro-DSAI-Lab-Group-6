@@ -242,8 +242,13 @@ The core intelligence uses LangGraph for stateful agent coordination:
                    ▼
               ┌─────────┐
               │   END   │
-              └─────────┘
-```
+               └─────────┘
+
+**LangGraph State Machine Visualization:**
+
+![LangGraph State Machine](/home/mysterious/github/CourseGPT-Pro-DSAI-Lab-Group-6/assets/graph.png)
+
+*Figure 3.2: Complete LangGraph state machine showing all nodes, edges, and conditional routing logic for the CourseGPT Pro multi-agent system.*
 
 **State Management:**
 - `CourseGPTState` extends LangGraph's `MessagesState`
@@ -255,6 +260,12 @@ The core intelligence uses LangGraph for stateful agent coordination:
 - `should_goto_tools()` function determines execution path
 - Routes based on tool calls in agent responses
 - Supports agent handoffs for complex multi-domain queries
+
+**System Architecture Diagram:**
+
+![CourseGPT Pro Multi-Agent Architecture](/home/mysterious/github/CourseGPT-Pro-DSAI-Lab-Group-6/assets/agentic_architecture.png)
+
+*Figure 3.1: CourseGPT Pro multi-agent architecture showing the Router Agent, specialized agents (Math, Code, General), and the LangGraph orchestration layer with conditional routing.*
 
 ### 3.3 Data Flow
 
@@ -305,17 +316,33 @@ User Query + Optional PDF
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **API Framework** | FastAPI | Async web framework |
-| **AI Orchestration** | LangGraph | Multi-agent state machine |
-| **Base Models** | Llama 3.1 8B, Gemma 3 27B, Qwen3 32B, Qwen 0.6B | Foundation models |
+| **API Framework** | FastAPI | Async web framework for high-performance APIs |
+| **AI Orchestration** | LangGraph | Multi-agent state machine with conditional routing |
+| **Base Models** | Llama 3.1 8B, Gemma 3 27B, Qwen3 32B, Qwen 0.6B | Foundation models for fine-tuning |
 | **Fine-Tuning** | LoRA/QLoRA/PEFT | Parameter-efficient adaptation |
 | **Training** | Google Vertex AI + RTX 4080 | Model training infrastructure |
 | **Model Hosting** | Hugging Face (ZeroGPU) | Fine-tuned model deployment |
 | **Storage** | Cloudflare R2 | Document storage (S3-compatible) |
 | **Vector Search** | Cloudflare AI Search | RAG and semantic search |
-| **PDF Processing** | pypdf + OCR service | Document text extraction |
+| **PDF Processing**| pypdf + OCR service | Document text extraction |
 | **Server** | Uvicorn | ASGI application server |
 | **Testing** | pytest | Unit and integration tests |
+
+**Technology Selection Rationale:**
+
+The technology stack was chosen to balance performance, cost-effectiveness, and developer productivity:
+
+- **FastAPI**: Selected for its native async support, automatic OpenAPI documentation, and high performance. Enables concurrent request handling critical for multi-agent orchestration.
+
+- **LangGraph**: Chosen over traditional orchestration frameworks for its explicit state management, visual graph debugging, and native LangChain integration. Allows complex conditional routing without callback hell.
+
+- **LoRA/QLoRA**: Enables fine-tuning large models (up to 70B parameters) on consumer hardware by reducing trainable parameters by 99%+. Critical for cost-effective experimentation and iteration.
+
+- **Cloudflare R2 + AI Search**: Selected for zero egress fees (vs. AWS S3), seamless vector search integration, and automatic RAG indexing. Reduces operational costs while maintaining performance.
+
+- **Google Vertex AI**: Provides managed PEFT tuning with automatic hyperparameter optimization and built-in monitoring. Complements local GPU training for larger models.
+
+- **Hugging Face ZeroGPU**: Offers serverless GPU inference with pay-per-second billing. Ideal for research prototypes and demo deployments without 24/7 infrastructure costs.
 
 ---
 
@@ -1285,6 +1312,89 @@ def get_router_model(model_name="gemma3-27b"):
 - Proof-based reasoning (theorems, lemmas, induction)
 - Statistical analysis (hypothesis testing, regression)
 
+### 5.1.2 Tools and Capabilities
+
+The Math Agent is equipped with the following tools to enhance its mathematical problem-solving capabilities:
+
+**Native Google Tools (when using Gemini):**
+- **Google Search**: For retrieving mathematical definitions, theorems, and references
+- **Code Execution**: For performing numerical computations and symbolic mathematics
+  - Supports Python with libraries like NumPy, SymPy, SciPy
+  - Enables verification of numerical results
+  - Allows plotting and visualization of mathematical functions
+
+**Agent Handoff:**
+- **General Agent Handoff**: For cross-domain queries requiring research or broader context
+  - Example: "What is the historical significance of Euler's formula?"
+  - Routes complex queries that blend mathematics with other domains
+
+**Example Tool Usage:**
+```python
+# Code execution for numerical verification
+import numpy as np
+def verify_quadratic(a, b, c, x):
+    return a*x**2 + b*x + c
+
+# Search for mathematical concepts
+"Search: definition of eigenvalues in linear algebra"
+```
+
+### 5.1.3 Model Configuration
+
+**Flexible Deployment Options:**
+
+The Math Agent supports two deployment modes:
+
+1. **Custom OpenAI-Compatible Endpoint** (via environment variables):
+   - `MATH_AGENT_URL`: Custom inference endpoint
+   - `MATH_AGENT_API_KEY`: Authentication key (optional)
+   - `MATH_AGENT_MODEL`: Model identifier
+   - Use case: Self-hosted models, custom fine-tuned endpoints
+
+2. **Default Gemini Model** (fallback):
+   - Model: Configurable via `GEMINI_MODEL` (default: `gemini-3-pro-preview`)
+   - API Key: `GEMINI_API_KEY` or `GOOGLE_API_KEY`
+   - Advantages: Advanced reasoning, native tool support, cost-effective
+   - Tools enabled: Google Search + Code Execution
+
+**Security Features:**
+- Prompt injection protection
+- Model name/weight disclosure prevention
+- System prompt confidentiality
+- Focused task execution (ignores off-topic requests)
+
+### 5.1.4 Integration with LangGraph
+
+The Math Agent is integrated into the CourseGPT Pro multi-agent system via LangGraph:
+
+**State Management:**
+- Receives state from Router Agent via `CourseGPTState`
+- Maintains conversation history across turns
+- Preserves context for follow-up mathematical questions
+
+**Tool Execution Node:**
+- `math_agent_tools` node executes tool calls
+- ToolNode automatically invokes functions and returns results
+- Supports both synchronous and asynchronous tool execution
+
+**Routing Logic:**
+- Router Agent calls `math_agent_handoff` tool with structured plan
+- `route_after_tools` inspects the handoff and routes to `math_agent`
+- Response flows back through the graph to the user
+
+**Conditional Edges:**
+```python
+# LangGraph routing after Math Agent
+graph.add_conditional_edges(
+    "math_agent",
+    should_goto_tools,  # Check if agent called tools
+    {
+        "tools": "math_agent_tools",  # Execute tools
+        "end": END  # Return response to user
+    }
+)
+```
+
 ### 5.2 Training
 
 **Milestone 3 Model: Gemma 3 4B + QLoRA**
@@ -1720,7 +1830,29 @@ Score: Your rating
 
 Make sure you follow the output format. DON'T GIVE ANY OUTPUT OTHER THAT THAT. DON'T GIVE ANY REASONING.
 
-This prompt was passed with the genearated code from the finetuned model to Ollama's gpt-oss:20b. It's job is to give rating to the code based on the above critera. llama 3.17B was found to be the best performing model of all the finetuned models
+This prompt was passed with the generated code from the finetuned model to Ollama's gpt-oss:20b. It's job is to give rating to the code based on the above criteria. llama 3.17B was found to be the best performing model of all the finetuned models.
+
+**Evaluation Process Visualization:**
+
+![Code Agent Evaluation Workflow](/home/mysterious/github/CourseGPT-Pro-DSAI-Lab-Group-6/assets/agentic_evaluation.png)
+
+*Figure 9.1: Automated evaluation workflow for Code Agent models using LLM-as-a-judge methodology with gpt-oss:20b as the evaluator.*
+
+**Model Comparison Results:**
+
+![Mean Ratings by Model](/home/mysterious/github/CourseGPT-Pro-DSAI-Lab-Group-6/assets/compare.mean_ratings_by_model.png)
+
+*Figure 9.2: Mean quality ratings across all three fine-tuned Code Agent models (Qwen 0.6B, Llama 3.1 8B, Gemma 7B) showing Llama 3.1 8B achieved the highest average score.*
+
+![Correctness Comparison](/home/mysterious/github/CourseGPT-Pro-DSAI-Lab-Group-6/assets/compare.correct_by_model.png)
+
+*Figure 9.3: Correctness scores (0-2 points) by model, demonstrating Llama 3.1 8B's superior performance in generating functionally correct code.*
+
+**Key Findings:**
+- **Llama 3.1 8B** achieved the best overall performance with highest mean ratings and correctness scores
+- **Gemma 7B** showed competitive performance despite smaller size
+- **Qwen 0.6B** demonstrated remarkable efficiency given its compact size (~400MB)
+- All models benefited from training on the reasoning-focused `nvidia/opencodereasoning` dataset
 
 ### 9.4 System-Level Evaluation
 

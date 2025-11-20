@@ -5,8 +5,9 @@ and falls back to basic Streamlit widgets otherwise. The goal is a
 clean, minimal chat UI with a focused input area and rounded bubbles.
 """
 
+import json
 import streamlit as st
-from typing import List, Dict
+from typing import List, Dict, Any
 
 
 def _build_ui_helper():
@@ -98,6 +99,23 @@ def _render_messages(chat_history: List[Dict]):
     for msg in chat_history:
         cls = "msg-user" if msg.get("sender") == "user" else "msg-ai"
         st.markdown(f"<div class='{cls}'>{msg.get('text')}</div>", unsafe_allow_html=True)
+        if msg.get("router_debug") and msg.get("sender") == "ai":
+            rd = msg["router_debug"]
+            tool = rd.get("tool", "")
+            route = ""
+            handoff = ""
+            if isinstance(rd.get("content"), dict):
+                route = rd["content"].get("route_plan", "")
+                handoff = rd["content"].get("handoff_plan", "")
+            st.markdown(
+                f"<div class='msg-ai' style='background:#0f1724;opacity:0.92'>"
+                f"<strong>Router handoff</strong><br/>Tool: <code>{tool}</code><br/>"
+                f"Route: <code>{route}</code><br/>Handoff: <code>{handoff}</code>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            with st.expander("Router payload (debug)", expanded=False):
+                st.code(json.dumps(rd, indent=2), language="json")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -125,7 +143,7 @@ def render_chat(mock_api):
             st.subheader("CourseGPT Workspace")
             st.caption("Context-aware mentor tuned for the CourseGPT curriculum.")
         with header_cols[1]:
-            if st.button("Clear conversation", key="clear_chat", use_container_width=True, help="Remove every message in this chat thread"):
+            if st.button("Clear conversation", key="clear_chat", width="stretch", help="Remove every message in this chat thread"):
                 st.session_state["chat_history"] = []
                 chat_history = []
                 _notify("Conversation cleared.")
@@ -136,7 +154,10 @@ def render_chat(mock_api):
         _render_quick_prompts()
         st.markdown("---")
 
-        _render_messages(chat_history)
+        # Create a placeholder for messages to allow re-rendering on submit
+        chat_placeholder = st.empty()
+        with chat_placeholder.container():
+            _render_messages(chat_history)
 
         # Input row pinned to bottom via CSS/JS scroll helper
         prefill = st.session_state.pop("chat_prefill", None)
@@ -153,38 +174,47 @@ def render_chat(mock_api):
                 help="Messages stay local to this Streamlit session.",
                 label_visibility="collapsed",
             )
-            submitted = st.form_submit_button("Send message", key="send_button", use_container_width=True, help="Submit your prompt to CourseGPT")
+            submitted = st.form_submit_button("Send message", key="send_button", width="stretch", help="Submit your prompt to CourseGPT")
         st.markdown("</div>", unsafe_allow_html=True)
 
         if submitted and user_input and user_input.strip():
             chat_history.append({"sender": "user", "text": user_input})
             st.session_state["chat_history"] = chat_history
 
-            ai_ph = st.empty()
-            typing = st.empty()
-            typing.markdown("<div class='typing'>CourseGPT is synthesizing context…</div>", unsafe_allow_html=True)
+            # Re-render messages to show the new user message immediately
+            with chat_placeholder.container():
+                _render_messages(chat_history)
+                
+                ai_ph = st.empty()
+                typing = st.empty()
+                typing.markdown("<div class='typing'>CourseGPT is synthesizing context…</div>", unsafe_allow_html=True)
 
-            response_text = ""
-            for chunk in mock_api.chat(
-                prompt=user_input,
-                thread_id=st.session_state["thread_id"],
-                user_id=st.session_state["user_id"]
-            ):
-                response_text += chunk
-                ai_ph.markdown(f"<div class='msg-ai'>{response_text}</div>", unsafe_allow_html=True)
-                st.markdown(
-                    """
-                    <script>
-                    const el = window.parent.document.getElementById('chat-window');
-                    if (el) { el.scrollTop = el.scrollHeight; }
-                    </script>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                response_text = ""
+                router_debug: Any = None
+                for chunk in mock_api.chat(
+                    prompt=user_input,
+                    thread_id=st.session_state["thread_id"],
+                    user_id=st.session_state["user_id"]
+                ):
+                    if isinstance(chunk, dict):
+                        response_text += chunk.get("text", "")
+                        router_debug = chunk.get("router_debug") or router_debug
+                    else:
+                        response_text += str(chunk)
+                    ai_ph.markdown(f"<div class='msg-ai'>{response_text}</div>", unsafe_allow_html=True)
+                    st.markdown(
+                        """
+                        <script>
+                        const el = window.parent.document.getElementById('chat-window');
+                        if (el) { el.scrollTop = el.scrollHeight; }
+                        </script>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
-            typing.empty()
-            chat_history.append({"sender": "ai", "text": response_text})
-            st.session_state["chat_history"] = chat_history
+                typing.empty()
+                chat_history.append({"sender": "ai", "text": response_text, "router_debug": router_debug})
+                st.session_state["chat_history"] = chat_history
 
         _render_timeline(chat_history)
         st.markdown("</div>", unsafe_allow_html=True)

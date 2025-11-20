@@ -48,6 +48,29 @@ def _extract_latest_message(messages):
     return None
 
 
+def _extract_router_debug(messages):
+    """
+    Return the first handoff ToolMessage content for debugging the router output.
+    """
+    import json
+
+    if not isinstance(messages, list):
+        return None
+
+    for msg in messages:
+        if hasattr(msg, "name") and isinstance(msg.name, str) and msg.name.endswith("_handoff"):
+            payload = msg.content
+            # Try to parse JSON payloads if content is a string representation
+            if isinstance(payload, str):
+                try:
+                    payload_json = json.loads(payload)
+                    payload = payload_json
+                except Exception:
+                    pass
+            return {"tool": msg.name, "content": payload}
+    return None
+
+
 def _truncate_text(text: str, limit: int = MAX_CONTEXT_CHARS) -> str:
     if len(text) <= limit:
         return text
@@ -261,8 +284,9 @@ async def graph_ask(
 
         messages = _get_state_field(result_state, "messages")
         latest_message = _extract_latest_message(messages)
+        router_debug = _extract_router_debug(messages)
 
-        return {"latest_message": latest_message}
+        return {"latest_message": latest_message, "router_debug": router_debug}
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001

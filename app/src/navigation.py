@@ -58,7 +58,7 @@ def render_topbar():
         tab_cols = st.columns(len(pages))
         for idx, label in enumerate(pages):
             active = ss.get("selected_page") == label
-            button_kwargs = {"key": f"nav_{label.lower()}", "use_container_width": True}
+            button_kwargs = {"key": f"nav_{label.lower()}", "width": "stretch"}
             if tab_cols[idx].button(label, **button_kwargs):
                 ss["selected_page"] = label
             tab_cols[idx].markdown(
@@ -72,7 +72,7 @@ def render_topbar():
         controls_cols = st.columns([0.9, 1.1, 1])
 
         with controls_cols[0]:
-            if st.button("＋ New Chat", key="new_chat", use_container_width=True):
+            if st.button("＋ New Chat", key="new_chat", width="stretch"):
                 ss["chat_history"] = []
                 _notify("Started a fresh chat thread.")
 
@@ -112,4 +112,3 @@ def render_topbar():
             )
     # close wrapper
     st.markdown('</div></div>', unsafe_allow_html=True)
-

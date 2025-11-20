@@ -29,9 +29,10 @@ class APIClient:
             response = requests.post(url, data=data, files=files if files else None)
             response.raise_for_status()
             result = response.json()
-            # The API returns {"latest_message": "..."}
-            # We yield this as a single chunk to be compatible with the UI loop
-            yield result.get("latest_message", "")
+            yield {
+                "text": result.get("latest_message", ""),
+                "router_debug": result.get("router_debug"),
+            }
         except requests.RequestException as e:
             yield f"Error communicating with API: {str(e)}"
 
