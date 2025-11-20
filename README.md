@@ -372,6 +372,8 @@ This LLM-as-a-judge approach lets us evaluate complex reasoning and code-generat
 
 ### 6.2 Math Agent
 
+For testing and benchmarking the Math Agent we used OpenCompass's MathBench dataset, which contains curated math questions across multiple difficulty levels (primary, middle, high school, and college). The dataset provides a balanced set of problems suitable for evaluating accuracy and reasoning across curricula — see https://github.com/open-compass/MathBench for details.
+
 Below are representative comparison plots produced by the Math Agent evaluation tooling.
 
 <p align="center">
@@ -387,6 +389,19 @@ Below are representative comparison plots produced by the Math Agent evaluation 
 The comparison visuals (correct-answer percentage, mean ratings and distribution boxplots) show a consistent pattern: Gemma-based adapters (the Gemma‑3 family used in our Milestone experiments) deliver the best trade-off between accuracy, consistency and operational cost. In the plots Gemma variants tend to have high mean ratings, tighter rating distributions (lower variance) and competitive correct-answer shares. Qwen3‑32B often matches or slightly exceeds Gemma on a few absolute metrics, but it requires substantially greater compute and memory resources — making it a strong premium option when infrastructure permits. Llama-family variants performed reasonably but displayed wider variance and, in some metrics, lower mean ratings than Gemma/Qwen in our runs.
 
 Recommendation: adopt Gemma (LoRA adapters) as the primary Math Agent for production and continued tuning due to its balance of performance and deployability; reserve Qwen3‑32B for targeted high‑resource evaluations or final-stage comparisons when maximum absolute performance is required.
+
+Judge rubric (used by the automated LLM judge to score math outputs):
+
+```python
+class Rubric(BaseModel):
+  correct_answer: bool
+  did_it_solve_in_easy_and_fast_approach: int
+  did_it_stop_midway: bool
+  easy_to_understand_explanation: int
+  notes: Optional[str] = None
+```
+
+Note on the "did it stop midway" metric: we did not include a separate plot for this criterion in the comparison figures because, in our evaluation runs, both models consistently produced complete answers (no partial/stopped outputs), so the metric did not provide distinguishing information for these checkpoints.
 
 
 
