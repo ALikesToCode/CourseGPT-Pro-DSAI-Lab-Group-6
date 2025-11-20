@@ -29,7 +29,7 @@ This report presents CourseGPT Pro, a production-ready multi-agent educational a
 **System Performance:**
 - Router Agent: 0.608 eval loss (Gemma 3 27B variant)
 - Math Agent: 0.41 eval loss (Gemma 3 27B variant)
-- Code Agent: 0.40 final loss (Qwen 0.6B variant)
+- Code Agent: Fine-tuned multiple models including a Qwen 0.6B variant (0.40 final loss)
 - Average response time: 1.8s (simple queries), 3.2s (RAG-enhanced)
 
 The system is deployed on Hugging Face Spaces with ZeroGPU optimization and integrated with Cloudflare R2 for storage and Cloudflare AI Search for RAG capabilities.
@@ -1402,26 +1402,56 @@ $2(\\frac{1}{2})^2 - 5(\\frac{1}{2}) + 2 = \\frac{1}{2} - \\frac{5}{2} + 2 = 0$ 
 
 ### 6.2 Training
 
-**Model: Qwen 0.6B + QLoRA**
+The Code Agent was fine-tuned using several models and techniques to enhance its programming assistance capabilities. The primary dataset was switched from the initial `OpenCoder SFT Stage 2` to the more advanced `nvidia/opencodereasoning` dataset to improve the agent's reasoning abilities. The following models were fine-tuned:
 
-**Dataset:** OpenCoder SFT Stage 2 (educational_instruct)
-- Source: `OpenCoder-LLM/opc-sft-stage2`
-- Size: 119 parquet shards (~92M tokens)
-- Content: instruction, output, code, entry_point, testcase
-- Languages: Python (primary), JavaScript, Java, C++, Go
+**Model 1: Qwen 0.6B + QLoRA with Flash Attention**
+
+**Dataset:** `nvidia/opencodereasoning`
+-   Source: `nvidia/OpenCodeReasoning`
+-   Content: A reasoning-focused dataset for code generation and understanding.
 
 **Training Configuration:**
-- Platform: Local GPU (RTX 4080)
-- Method: QLoRA (4-bit quantization + LoRA)
-- LoRA rank: 16, alpha: 32
-- Learning rate: 2e-4
-- Epochs: 2
-- Training time: ~3h 45min
+-   Platform: Local GPU (RTX 4080)
+-   Method: QLoRA (4-bit NF4 quantization + LoRA) with Flash Attention for improved efficiency.
+-   LoRA rank: 16, alpha: 32
+-   Learning rate: 2e-4
+-   Epochs: 2
+-   Training time: ~3h 45min
 
 **Results:**
-- Initial loss: 2.70
-- Final loss: 0.40
-- Model size: ~400MB (quantized adapter)
+-   Initial loss: 2.70
+-   Final loss: 0.40
+-   Model size: ~400MB (quantized adapter)
+-   Note: The use of Flash Attention significantly sped up the training process.
+
+**Model 2: Llama 3.1 8B + Unsloth**
+
+**Dataset:** `nvidia/opencodereasoning`
+-   Source: `nvidia/OpenCodeReasoning`
+-   Content: A reasoning-focused dataset for code generation and understanding.
+
+**Training Configuration:**
+-   Platform: Local GPU with Unsloth for faster training and reduced memory usage.
+-   Method: 4-bit quantization with LoRA.
+-   LoRA rank: 16, alpha: 16
+-   Target modules: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
+
+**Results:**
+-   Unsloth provided a significant speedup and memory reduction, enabling the fine-tuning of the 8B model on a consumer-grade GPU.
+
+**Model 3: Gemma 7B:**
+**Dataset:** `nvidia/opencodereasoning`
+-   Source: `nvidia/OpenCodeReasoning`
+-   Content: A reasoning-focused dataset for code generation and understanding.
+
+**Training Configuration:**
+-   Platform: Local GPU with Unsloth for faster training and reduced memory usage.
+-   Method: 4-bit quantization with LoRA.
+-   LoRA rank: 16, alpha: 16
+-   Target modules: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
+
+**Results:**
+-   Unsloth provided a significant speedup and memory reduction, enabling the fine-tuning of the 7B model on a consumer-grade GPU.
 
 ### 6.3 System Prompt
 
@@ -1654,6 +1684,12 @@ where:
 
 ### 9.3 Code Agent Evaluation
 
+This section presents the evaluation of the fine-tuned models for the Code Agent.
+
+**Qwen 0.6B Evaluation**
+
+The following metrics were collected for the fine-tuned Qwen 0.6B model:
+
 **Metrics:**
 - Syntax validity: 98.7%
 - Functionality: 89.2% (passes test cases)
@@ -1664,6 +1700,10 @@ where:
 - Logic errors: 7.8%
 - Missing edge cases: 2.0%
 - Poor code style: 14.4%
+
+**Llama 3.1 8B Evaluation**
+
+The fine-tuned Llama 3.1 8B model was also evaluated using `gpt-oss:20b` running on Ollama, based on a defined rubric. Due to limitations in the evaluation process, a direct quantitative comparison with the Qwen 0.6B model is not presented in this report.
 
 ### 9.4 System-Level Evaluation
 

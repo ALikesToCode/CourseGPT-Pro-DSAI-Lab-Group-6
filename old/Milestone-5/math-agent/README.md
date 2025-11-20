@@ -7,12 +7,14 @@ Contents
 - `convert_benchmarks_to_jsonl.py` — convert all benchmark files into a single `combined_benchmarks.jsonl` in our prompt format
 - `combined_benchmarks.jsonl` — example combined output (already present)
 - `evaluate_vertex_benchmarks.py` — call a Vertex endpoint on the combined JSONL, save streamed results, upload parts to GCS and final file
+- `eval_ollama.py` — call a local Ollama model on the combined JSONL and save results
 - `compute_metrics.py` — compute exact-match and numeric-equality metrics from results JSONL (if labels exist)
 - `EVALUATE.md` — human-friendly instructions and examples (also in this file)
 
 Quick overview
 - Convert raw benchmark files -> `combined_benchmarks.jsonl` using `convert_benchmarks_to_jsonl.py`.
 - Run `evaluate_vertex_benchmarks.py` to send prompts to your deployed Vertex endpoint. The script supports batching, periodic flushes, resumable checkpoints (GCS), and final upload of the combined results file.
+- Or, run `eval_ollama.py` to send prompts to a local Ollama model.
 - Compute accuracy via `compute_metrics.py` if your combined JSONL includes labels.
 
 Prerequisites
@@ -21,7 +23,7 @@ Prerequisites
 - Install required packages:
 
 ```bash
-pip install google-cloud-aiplatform google-cloud-storage datasets
+pip install google-cloud-aiplatform google-cloud-storage datasets ollama
 ```
 
 Note: `datasets` is only required if you will manipulate HF datasets locally; the conversion script works with local json/jsonl files.
@@ -90,7 +92,26 @@ Behavior and resumability
 - The script writes every flush as a temporary part file: `<output_basename>.partN.jsonl`, uploads that part to GCS (if `--gcs-bucket`), writes a checkpoint `checkpoint.json` to GCS with fields `{processed, part_index}`, and deletes the local part file. The local combined file is appended to as it runs.
 - On resume (`--resume`) the script reads the checkpoint on GCS (if present) and continues from the next part index. If no checkpoint exists, it will inspect existing part files in GCS and local combined file to infer progress.
 
-3) Compute metrics
+3) Evaluate a local Ollama model
+
+You can also evaluate a local model served via Ollama. Ensure the Ollama server is running.
+
+Basic usage:
+```bash
+python eval_ollama.py \
+  --model llama3 \
+  --input combined_benchmarks.jsonl \
+  --output results_ollama.jsonl
+```
+
+Key flags
+- `--model` (str): name of the Ollama model to use (e.g., `llama3`, `gemma:2b`)
+- `--input` (str): path to the combined benchmark JSONL file
+- `--output` (str): path to save the results JSONL file
+- `--max-examples` (int): limit the number of examples to run
+- `--overwrite`: if set, overwrite the output file if it exists
+
+4) Compute metrics
 
 If your input/combined file contains labels (the converter may include `label` when input entries had `answer`) you can compute exact-match accuracy:
 
