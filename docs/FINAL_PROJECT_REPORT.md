@@ -29,7 +29,7 @@ This report presents CourseGPT Pro, a production-ready multi-agent educational a
 **System Performance:**
 - Router Agent: 0.608 eval loss (Gemma 3 27B variant)
 - Math Agent: 0.41 eval loss (Gemma 3 27B variant)
-- Code Agent: Fine-tuned multiple models including a Qwen 0.6B variant (0.40 final loss)
+- Code Agent: Fine-tuned multiple models including a Qwen 0.6B, llama 3.18B and Gemma 7B
 - Average response time: 1.8s (simple queries), 3.2s (RAG-enhanced)
 
 The system is deployed on Hugging Face Spaces with ZeroGPU optimization and integrated with Cloudflare R2 for storage and Cloudflare AI Search for RAG capabilities.
@@ -1686,24 +1686,41 @@ where:
 
 This section presents the evaluation of the fine-tuned models for the Code Agent.
 
-**Qwen 0.6B Evaluation**
+Evaluation Criteria (Total: 5 points)
 
-The following metrics were collected for the fine-tuned Qwen 0.6B model:
+Correctness (0-2 points)
 
-**Metrics:**
-- Syntax validity: 98.7%
-- Functionality: 89.2% (passes test cases)
-- Code quality: 85.6% (PEP 8, comments, readability)
+Does the code solve the given problem?
 
-**Error Analysis:**
-- Syntax errors: 1.3%
-- Logic errors: 7.8%
-- Missing edge cases: 2.0%
-- Poor code style: 14.4%
+Does it run without errors?
 
-**Llama 3.1 8B Evaluation**
+Are edge cases handled appropriately?
 
-The fine-tuned Llama 3.1 8B model was also evaluated using `gpt-oss:20b` running on Ollama, based on a defined rubric. Due to limitations in the evaluation process, a direct quantitative comparison with the Qwen 0.6B model is not presented in this report.
+Clarity of Reasoning (0-1 point)
+
+Does the explanation (if provided) clearly describe the approach?
+
+Is the reasoning easy to follow?
+
+Step-by-Step Logic (0-1 point)
+
+Is the solution broken down into logical steps?
+
+Does the explanation reflect a coherent thought process?
+
+Readability (0-1 point)
+
+Is the code organized and well-formatted?
+
+Are variable names, comments, and structure clear?
+
+Output Format
+
+Score: Your rating
+
+Make sure you follow the output format. DON'T GIVE ANY OUTPUT OTHER THAT THAT. DON'T GIVE ANY REASONING.
+
+This prompt was passed with the genearated code from the finetuned model to Ollama's gpt-oss:20b. It's job is to give rating to the code based on the above critera. llama 3.17B was found to be the best performing model of all the finetuned models
 
 ### 9.4 System-Level Evaluation
 
