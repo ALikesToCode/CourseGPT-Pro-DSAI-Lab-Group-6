@@ -359,7 +359,52 @@ Key points of the LLM-as-a-judge workflow:
 This LLM-as-a-judge approach lets us evaluate complex reasoning and code-generation quality at a scale that would be impractical with full human annotation, while retaining human oversight where it matters most. It also integrates naturally with our LoRA-based fine-tuning experiments: judge-driven ranking identifies the best adapter checkpoints and provides automated diagnostics that guide further prompt and data engineering.
 
 
-### 6.2 Math Agent
+### 6.2 Router Agent
+
+Overview
+- The Router Agent decides which specialist agent(s) should handle an incoming user request (e.g., `/general-search`, `/math`, `/code`). For Milestone‑5 evaluation we focused on three Vertex‑tuned LoRA adapters (Llama 3.1 8B, Gemma 3 27B, Qwen 3 32B) and measured routing accuracy, schema adherence and robustness to rare route patterns.
+
+Evaluation setup
+- Data: Vertex tuning JSONL splits were used (train/validation/test). The test split contains 409 examples and a mix of route templates and optional metric fields. A separate hard benchmark (see below) was generated to stress non-canonical routes.
+- Models: three LoRA adapters were evaluated: `router-gemma3-peft`, `router-qwen3-32b-peft`, and `router-llama31-peft`.
+- Metrics: evaluation aggregated standard LM diagnostics (eval loss, perplexity) and schema-aware metrics (route-order accuracy, tool precision/recall, retention of optional metric fields). We also measured generation length ratios and throughput (samples/s).
+
+Key quantitative findings
+- All three adapters reached sub‑2 perplexity on the validation split; Gemma posted the lowest eval loss and highest throughput. Example summary (selected fields):
+
+  - `router-gemma3-peft`: Eval loss ≈ 0.608, Perplexity ≈ 1.837, high throughput (≈53 samples/s)
+  - `router-qwen3-32b-peft`: Eval loss ≈ 0.628, Perplexity ≈ 1.873
+  - `router-llama31-peft`: Eval loss ≈ 0.676, Perplexity ≈ 1.972 (lower throughput)
+
+Dataset diagnostics and failure modes
+- The test split statistics highlighted a strong canonical-route bias: ~98.8% of samples used the same first-tool (`/general-search`) and only ~1.2% started with `/math`. This class imbalance makes the router prone to over‑relying on the dominant route when faced with rare but important patterns (e.g., math-first flows).
+- Optional nested fields (e.g., `*_guidance`, `*_computation`) appear in ~9% of examples and are common sources of schema drift when the model omits them.
+- Output length inflation (overlong generations) was observed for some checkpoints (notably Llama), which can cause JSON truncation or downstream parsing failures.
+
+Error analysis & mitigations
+- Canonical-route bias: we generated a hard negative benchmark (see below) that oversamples math-first and multi-pass routes to provide stronger signal during fine-tuning and evaluation.
+- Schema-awareness: we added schema-aware scoring (`schema_score.py`) that tests for route order, per-tool precision/recall, and metrics-key retention so that schema drops are visible in evaluation dashboards.
+- Length control: introduced length monitoring hooks and length-ratio gates (e.g., flagging outputs with length_ratio > 1.1) to prevent runaway generations.
+
+Implemented improvements (Milestone 5)
+- Schema-aware scoring and per-field metrics so router checkpoints are evaluated on both order and payload fidelity.
+- Hard-negative benchmark generation scripts that produce targeted test sets (math-first, four-step, metrics-heavy) for regression testing and targeted fine-tuning.
+- Automated pass/fail runner to compare model outputs against thresholded benchmarks for CI gating.
+
+Benchmarks & reproducibility
+- Deep Router Benchmark: a focused held-out set emphasising advanced, four-step, and metrics-rich prompts. Use `generate_router_benchmark.py` to recreate.
+- Router Benchmark Hard (v1): blends train/validation/test splits with category sampling (math_first, four_step, metrics_guidance, etc.) to build a stress set for acceptance testing.
+- Scoring & runner scripts: `schema_score.py`, `router_benchmark_runner.py` and `collect_router_metrics.py` are used to compute metrics and produce reports consumed by CI.
+
+Limitations
+- Current metrics depend on trainer exports (Hugging Face) and validation splits; full end-to-end structured inference scoring is not yet automated for all checkpoints.
+- BLEU-style or token-overlap metrics under-reward semantically correct but paraphrased plans; schema-aware scoring alleviates but does not eliminate this.
+
+Artifacts
+- Scripts and outputs referenced in this evaluation include: `collect_router_metrics.py`, `schema_score.py`, `generate_router_benchmark.py`, `router_eval_metrics.json`, and `benchmarks/router_benchmark_hard.jsonl`.
+
+
+### 6.3 Math Agent
 
 For testing and benchmarking the Math Agent we used OpenCompass's MathBench dataset, which contains curated math questions across multiple difficulty levels (primary, middle, high school, and college). The dataset provides a balanced set of problems suitable for evaluating accuracy and reasoning across curricula — see https://github.com/open-compass/MathBench for details.
 
@@ -391,6 +436,9 @@ class Rubric(BaseModel):
 ```
 
 Note on the "did it stop midway" metric: we did not include a separate plot for this criterion in the comparison figures because, in our evaluation runs, both models consistently produced complete answers (no partial/stopped outputs), so the metric did not provide distinguishing information for these checkpoints.
+
+
+### 6.4 Programming Agent
 
 
 
