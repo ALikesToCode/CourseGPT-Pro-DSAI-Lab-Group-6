@@ -9,6 +9,9 @@
 
 ---
 
+![CourseGPT Cover](assets/coursegpt_cover.png)
+
+
 ## 1. Abstract
 
 CourseGPT is an intelligent educational assistant designed using a LangGraph-based agentic architecture to support students with subject-specific tasks in mathematics, programming, and general academic queries. Unlike generic chatbots, which often struggle with precise reasoning and specialized tasks, CourseGPT uses a multi-agent workflow to route queries to domain-specialized agents. The system integrates FastAPI for backend API services and Streamlit for an interactive web-based frontend. Experimental evaluation indicates improved intent classification accuracy, better performance on math and coding tasks, and acceptable latency, demonstrating CourseGPT’s effectiveness as a practical student helper chatbot.
@@ -156,6 +159,11 @@ The intent classification leverages both heuristic patterns and LLM reasoning:
   - To classify queries into one of the three categories.
   - To be conservative in ambiguous cases and route to General when unsure.
 
+Agentic workflow diagram
+
+![Agent Graph](assets/agent_graph.png)
+
+
 #### 4.2.3. Inter-Agent Communication: State Management
 
 LangGraph maintains a **shared state** that can be passed across nodes:
@@ -167,6 +175,11 @@ LangGraph maintains a **shared state** that can be passed across nodes:
 - This allows:
   - Multi-turn conversations: the same agent or different agents can refer back to previous answers.
   - Potential future expansions where one agent’s output becomes another agent’s input (e.g., a General Agent drafting a question that the Math Agent then solves).
+
+Architecture diagram
+
+![System Architecture](assets/architecture_diagram.png)
+
 
 ### 4.3. Data Handling
 
@@ -285,24 +298,11 @@ The system was evaluated using both automated tests and manual inspection:
     - Response coherence.
     - Latency and stability.
 
-### 6.2. Performance Metrics
+Evaluation results (example)
 
-Key metrics:
+![Evaluation Results](assets/evaluation_results.png)
 
-- **Intent Classification Accuracy:**
-  - Percentage of queries correctly routed to Math, Programming, or General.
-- **Response Quality:**
-  - Math correctness rate on a sample of problems.
-  - Code correctness evaluated through execution where possible (e.g., running Python snippets).
-- **Latency:**
-  - Time from user query submission to visible answer.
 
-Example observed trends (illustrative):
-
-- Router accuracy: around 85–90% on a labeled test set.
-- Math accuracy: high on well-posed algebra and calculus problems when clearly specified.
-- Programming responses: generally correct for small/medium-sized snippets; occasional logical errors on complex tasks.
-- Latency: typically within 1–3 seconds depending on model and infrastructure.
 
 ### 6.3. Comparative Analysis
 
