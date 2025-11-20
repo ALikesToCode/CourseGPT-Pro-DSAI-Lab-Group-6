@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from config import Settings
+from api.config import Settings
 
 
 logger = logging.getLogger(__name__)
@@ -84,4 +84,3 @@ class AISearchService:
             )
 
         return response.json()
-

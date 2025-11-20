@@ -1,7 +1,13 @@
-
+from pathlib import Path
+import sys
 from fastapi import FastAPI
 
-from routes import ai_search_router, files_router, health_router, graph_call
+# Ensure repository root is on sys.path so `api.*` imports resolve when running from /api
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from api.routes import ai_search_router, files_router, health_router, graph_call
 
 app = FastAPI(
     title="CourseGPT Graph",

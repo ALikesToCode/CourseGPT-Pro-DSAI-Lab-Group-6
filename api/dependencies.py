@@ -1,10 +1,10 @@
 from functools import lru_cache
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
 
-from config import Settings, get_settings
-from services.ai_search import AISearchService
-from services.r2_storage import R2StorageService
+from api.config import Settings, get_settings
+from api.services.ai_search import AISearchService
+from api.services.r2_storage import R2StorageService
 
 
 @lru_cache
@@ -23,7 +23,14 @@ def get_r2_service(
     """
     FastAPI dependency wrapper so we can inject the R2 storage service.
     """
-    return _build_r2_service(settings)
+    try:
+        return _build_r2_service(settings)
+    except RuntimeError as exc:
+        # Surface as a 503 to indicate missing configuration rather than a server crash.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        )
 
 
 def get_ai_search_service(
@@ -33,4 +40,3 @@ def get_ai_search_service(
     FastAPI dependency wrapper so routes can call Cloudflare AI Search APIs.
     """
     return _build_ai_search_service(settings)
-

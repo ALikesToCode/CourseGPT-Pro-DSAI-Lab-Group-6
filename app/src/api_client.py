@@ -1,10 +1,12 @@
-import requests
 import os
 from typing import Optional, Dict, Any, Generator
 
+import requests
+
 class APIClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:8000"):
-        self.base_url = base_url
+    def __init__(self, base_url: Optional[str] = None):
+        # Prefer env override so deployed Streamlit UIs can point at a remote FastAPI instance.
+        self.base_url = base_url or os.getenv("COURSEGPT_API_BASE", "http://127.0.0.1:8000")
 
     def chat(self, prompt: str, thread_id: str, user_id: str, file: Optional[tuple] = None) -> Generator[str, None, None]:
         """
@@ -59,7 +61,7 @@ class APIClient:
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
-            return {"files": []}
+            raise Exception(f"List files failed: {str(e)}")
 
     def delete_file(self, object_key: str) -> Dict[str, Any]:
         """

@@ -3,8 +3,8 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from dependencies import get_ai_search_service
-from services.ai_search import (
+from api.dependencies import get_ai_search_service
+from api.services.ai_search import (
     AISearchService,
     CloudflareConfigurationError,
     CloudflareRequestError,
@@ -65,4 +65,3 @@ async def trigger_ai_search_sync(
         return await ai_service.trigger_sync()
     except Exception as exc:  # noqa: BLE001
         _handle_cloudflare_errors(exc)
-

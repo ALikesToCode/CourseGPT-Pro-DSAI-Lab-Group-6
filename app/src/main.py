@@ -5,7 +5,7 @@ documents, settings), initializes `st.session_state` with safe defaults,
 and applies global styles from `ui_styles.apply_styles`.
 
 Run with:
-    streamlit run "Milestone 6/streamlit_ui/src/main.py"
+    streamlit run app/src/main.py
 """
 
 import streamlit as st

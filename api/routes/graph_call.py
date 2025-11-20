@@ -11,14 +11,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from langchain.messages import HumanMessage
 from pypdf import PdfReader
 
-from dependencies import get_ai_search_service
-from services.ai_search import (
+from api.dependencies import get_ai_search_service
+from api.services.ai_search import (
     AISearchService,
     CloudflareConfigurationError,
     CloudflareRequestError,
 )
 
-from graph.graph import graph as course_graph
+from api.graph.graph import graph as course_graph
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

@@ -8,7 +8,7 @@ import boto3
 from botocore.client import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-from config import Settings
+from api.config import Settings
 
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,21 @@ class R2StorageService:
 
     def __init__(self, settings: Settings):
         self._settings = settings
+        # Validate required fields up front for clearer errors in dependency injection.
+        missing = []
+        if not settings.cloudflare_r2_bucket:
+            missing.append("CLOUDFLARE_R2_BUCKET_NAME")
+        if not settings.cloudflare_r2_endpoint:
+            missing.append("CLOUDFLARE_R2_ENDPOINT")
+        if not settings.cloudflare_access_key:
+            missing.append("CLOUDFLARE_ACCESS_KEY")
+        if not settings.cloudflare_secret_access_key:
+            missing.append("CLOUDFLARE_SECRET_ACCESS_KEY")
+        if missing:
+            raise RuntimeError(
+                f"Cloudflare R2 is not configured: missing {', '.join(missing)}"
+            )
+
         self.bucket = settings.cloudflare_r2_bucket
         self.endpoint = settings.cloudflare_r2_endpoint.rstrip("/")
 
@@ -117,4 +132,3 @@ class R2StorageService:
         """
         key = key.lstrip("/")
         return f"{self.endpoint}/{self.bucket}/{key}"
-

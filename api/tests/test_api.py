@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
-from dependencies import get_ai_search_service, get_r2_service
+from api.dependencies import get_ai_search_service, get_r2_service
 from services.ai_search import CloudflareConfigurationError
 
 
@@ -118,4 +118,3 @@ def test_ai_search_query_missing_config():
     response = client.post("/ai-search/query", json={"query": "hello"})
     assert response.status_code == 503
     assert "missing config" in response.json()["detail"]
-

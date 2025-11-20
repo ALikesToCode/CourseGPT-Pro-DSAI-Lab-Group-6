@@ -2,10 +2,11 @@
 
 Frontend-only Streamlit UI for CourseGPT (Milestone 6).
 
-Run:
+Run locally (pointing at a running FastAPI backend on localhost:8000 by default):
 
-```powershell
-streamlit run "Milestone 6/streamlit_ui/src/main.py"
+```bash
+export COURSEGPT_API_BASE="http://127.0.0.1:8000"
+streamlit run app/src/main.py
 ```
 
 This folder contains a modular, theme-driven Streamlit UI using an academic theme. Components are split into `navigation`, `components_chat`, `components_docs`, `components_settings`, `mock_api`, and `ui_styles`.

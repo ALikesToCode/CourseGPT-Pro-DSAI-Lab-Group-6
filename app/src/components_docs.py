@@ -103,7 +103,7 @@ def _render_insights(docs: List[Dict]):
     )
 
 
-def _render_card_actions(doc_id: str, mock_api):
+def _render_card_actions(doc_id: str, api_client):
     cols = st.columns(2)
     with cols[0]:
         if st.button("Preview document", key=f"view_{doc_id}", use_container_width=True, help="Open a read-only preview in this workspace"):
@@ -121,7 +121,7 @@ def _render_card(title: str, snippet: str, tags: List[str], doc_id: str, mock_ap
             with st_card(title=title, text=snippet):
                 if annotated_text is not None and tags:
                     annotated_text(*[(t, "", "#6B7280") for t in tags])
-                _render_card_actions(doc_id, mock_api)
+                _render_card_actions(doc_id, api_client)
             return
         except Exception:
             pass
@@ -140,11 +140,11 @@ def _render_card(title: str, snippet: str, tags: List[str], doc_id: str, mock_ap
             + "</div>",
             unsafe_allow_html=True,
         )
-    _render_card_actions(doc_id, mock_api)
+    _render_card_actions(doc_id, api_client)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def render_documents(mock_api, variant: str = "full"):
+def render_documents(api_client, variant: str = "full"):
     """
     Render the document UI.
 
@@ -155,15 +155,19 @@ def render_documents(mock_api, variant: str = "full"):
     """
 
     if variant == "sidebar":
-        _render_documents_sidebar(mock_api)
+        _render_documents_sidebar(api_client)
         return
 
-    _render_documents_workspace(mock_api)
+    _render_documents_workspace(api_client)
 
 
 def _render_documents_sidebar(api_client):
-    docs_resp = api_client.list_files()
-    docs = docs_resp.get("files", [])
+    try:
+        docs_resp = api_client.list_files()
+        docs = docs_resp.get("files", [])
+    except Exception as exc:
+        docs = []
+        st.warning(f"Unable to load recent documents: {exc}")
     container = st.container()
     with container:
         st.subheader("Documents")
@@ -182,7 +186,6 @@ def _render_documents_sidebar(api_client):
             use_container_width=True,
             help="Adds the selected file to the Documents workspace.",
         ):
-            content = uploaded.read()
             content = uploaded.read()
             api_client.upload_file(
                 content,
@@ -208,8 +211,12 @@ def _render_documents_sidebar(api_client):
 
 def _render_documents_workspace(api_client):
     container = st.container()
-    docs_resp = api_client.list_files()
-    docs = docs_resp.get("files", [])
+    try:
+        docs_resp = api_client.list_files()
+        docs = docs_resp.get("files", [])
+    except Exception as exc:
+        docs = []
+        st.warning(f"Unable to list documents: {exc}")
 
     with container:
         st.markdown('<div class="cg-card doc-panel">', unsafe_allow_html=True)
@@ -219,7 +226,7 @@ def _render_documents_workspace(api_client):
         tab_library, tab_insights = st.tabs(["Library", "Insights"])
 
         with tab_library:
-            _render_upload_section(mock_api)
+            _render_upload_section(api_client)
 
             query, tag_filter = _render_search_filter()
 
@@ -241,7 +248,7 @@ def _render_documents_workspace(api_client):
 
             preview_id = st.session_state.get("doc_preview")
             if preview_id:
-                _render_preview(mock_api, preview_id)
+                _render_preview(api_client, preview_id)
 
         with tab_insights:
             _render_insights(docs)
@@ -249,7 +256,7 @@ def _render_documents_workspace(api_client):
         st.markdown("</div>", unsafe_allow_html=True)
 
 
-def _render_upload_section(mock_api):
+def _render_upload_section(api_client):
     st.markdown("#### Upload a document")
     st.caption("Accepted formats: PDF, Markdown, and plain text. Files stay within this local session.")
 
@@ -284,26 +291,19 @@ def _render_upload_section(mock_api):
     )
 
     if submitted:
-        progress = st.progress(0.0)
-
-        def _progress_cb(pct):
-            progress.progress(min(max(pct, 0), 100) / 100)
-
         content = uploaded.read()
-        safe_title = title or uploaded.name
-        content = uploaded.read()
-        # safe_title = title or uploaded.name
-        # tags are not supported in simple upload endpoint yet
-        doc = api_client.upload_file(
-            content,
-            uploaded.name,
-        )
-        # API returns {"file": {"key": "...", ...}}
-        file_info = doc.get("file", {})
-        st.session_state["doc_preview"] = file_info.get("key")
-        st.session_state["doc_title"] = ""
-        st.session_state["doc_tags"] = ""
-        _notify("Document uploaded!")
+        try:
+            doc = api_client.upload_file(
+                content,
+                uploaded.name,
+            )
+            file_info = doc.get("file", {})
+            st.session_state["doc_preview"] = file_info.get("key")
+            st.session_state["doc_title"] = ""
+            st.session_state["doc_tags"] = ""
+            _notify("Document uploaded!")
+        except Exception as exc:
+            st.error(f"Upload failed: {exc}")
     st.markdown("</div>", unsafe_allow_html=True)
 
 

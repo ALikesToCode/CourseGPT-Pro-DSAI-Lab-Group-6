@@ -18,10 +18,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 import sys
 from pathlib import Path
 
-# Add the project root (course_gpt_graph) to sys.path so sibling
-# packages like `tools` can be imported when running this file
-# directly from the `graph` folder.
-project_root = Path(__file__).resolve().parents[1]
+# Add the repository root to sys.path so `api.*` imports work even when running
+# from inside the `api` directory (uvicorn main:app).
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 

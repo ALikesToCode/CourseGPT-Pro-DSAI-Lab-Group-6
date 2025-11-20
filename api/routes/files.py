@@ -5,8 +5,8 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
-from dependencies import get_r2_service
-from services.r2_storage import R2StorageService
+from api.dependencies import get_r2_service
+from api.services.r2_storage import R2StorageService
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -81,4 +81,3 @@ async def delete_file(
         raise HTTPException(status_code=400, detail="Object key is required")
     r2_service.delete_object(object_key)
     return {"message": "deleted", "key": object_key}
-
