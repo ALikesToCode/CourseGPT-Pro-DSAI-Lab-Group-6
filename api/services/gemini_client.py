@@ -14,24 +14,25 @@ class Gemini3Client:
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.tools = []
-        self.tool_config = None
-        self.native_tools = []
+        self.function_declarations: List[types.FunctionDeclaration] = []
+        self.native_tools: List[str] = []
 
     def enable_google_search(self):
         """Enable Google Search grounding."""
-        self.native_tools.append({"google_search": {}})
+        if "google_search" not in self.native_tools:
+            self.native_tools.append("google_search")
 
     def enable_code_execution(self):
         """Enable Code Execution."""
-        self.native_tools.append({"code_execution": {}})
+        if "code_execution" not in self.native_tools:
+            self.native_tools.append("code_execution")
 
     def bind_tools(self, tools: List[BaseTool], parallel_tool_calls: bool = False):
         """
         Bind tools to the client. This converts LangChain tools to Gemini tool definitions.
         """
         self.tools = tools
-        # Convert LangChain tools to Gemini function declarations
-        gemini_tools = []
+        self.function_declarations = []
         for tool in tools:
             # Map Python types to JSON schema types
             def map_type(py_type):
@@ -61,19 +62,18 @@ class Gemini3Client:
                          properties[prop_name]["items"] = {"type": "STRING"}
 
                 required = schema.get("required", [])
-            
-            function_decl = types.FunctionDeclaration(
-                name=tool.name,
-                description=tool.description,
-                parameters=types.Schema(
-                    type="OBJECT",
-                    properties=properties,
-                    required=required
+
+            self.function_declarations.append(
+                types.FunctionDeclaration(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters=types.Schema(
+                        type="OBJECT",
+                        properties=properties,
+                        required=required
+                    )
                 )
             )
-            gemini_tools.append(types.Tool(function_declarations=[function_decl]))
-        
-        self.tool_config = gemini_tools
 
     def invoke(self, messages: List[BaseMessage]) -> BaseMessage:
         """
@@ -118,20 +118,17 @@ class Gemini3Client:
         # Call the API
         config = {}
         all_tools = []
-        
-        # Add custom tools (LangChain tools)
-        if self.tool_config:
-            all_tools.extend(self.tool_config)
-            
-        # Add native tools
-        if self.native_tools:
-            # Native tools are dicts like {"google_search": {}}, need to wrap in types.Tool?
-            # The SDK expects types.Tool objects.
-            for nt in self.native_tools:
-                if "google_search" in nt:
-                    all_tools.append(types.Tool(google_search=types.GoogleSearch()))
-                elif "code_execution" in nt:
-                    all_tools.append(types.Tool(code_execution=types.ToolCodeExecution()))
+
+        tool_kwargs: Dict[str, Any] = {}
+        if self.function_declarations:
+            tool_kwargs["function_declarations"] = self.function_declarations
+        if "google_search" in self.native_tools:
+            tool_kwargs["google_search"] = types.GoogleSearch()
+        if "code_execution" in self.native_tools:
+            tool_kwargs["code_execution"] = types.ToolCodeExecution()
+
+        if tool_kwargs:
+            all_tools.append(types.Tool(**tool_kwargs))
 
         if all_tools:
             config["tools"] = all_tools
