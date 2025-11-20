@@ -1,14 +1,44 @@
 # Math Agent — Evaluation & Benchmarks (Milestone 5)
 
+[![Made with Python](https://img.shields.io/badge/made%20with-Python-3776AB?logo=python)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 This folder contains benchmark data, conversion and evaluation utilities for the Math agent. Use these scripts to convert benchmark files into the evaluation JSONL, run inference against a deployed Vertex endpoint, and compute simple metrics.
 
-Contents
-- `benchmarks_dataset/` — raw benchmark files (jsonl) organized by difficulty
-- `convert_benchmarks_to_jsonl.py` — convert all benchmark files into a single `combined_benchmarks.jsonl` in our prompt format
-- `combined_benchmarks.jsonl` — example combined output (already present)
-- `evaluate_vertex_benchmarks.py` — call a Vertex endpoint on the combined JSONL, save streamed results, upload parts to GCS and final file
-- `compute_metrics.py` — compute exact-match and numeric-equality metrics from results JSONL (if labels exist)
-- `EVALUATE.md` — human-friendly instructions and examples (also in this file)
+**Quick Links**
+- **Plots:** `Milestone-5/math-agent/plots/` (gallery and regeneration command below)
+- **Scripts:** `convert_benchmarks_to_jsonl.py`, `evaluate_vertex_benchmarks.py`, `compute_metrics.py`
+- **Raw data:** `benchmarks_dataset/`
+
+---
+
+## Table of Contents
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Create / Refresh Combined JSONL](#1-createrefresh-the-combined-benchmark-jsonl)
+- [Evaluate on Vertex](#2-evaluate-your-deployed-vertex-endpoint)
+- [Compute Metrics](#3-compute-metrics)
+- [Plots & Gallery](#plots)
+- [Contact](#contact)
+
+---
+
+## Overview
+
+This README explains how to convert benchmark files to our evaluation prompt format, run them through a Vertex endpoint, and compute evaluation metrics. The repository includes a plotting utility to quickly generate comparison visuals from JSONL judgment files.
+
+## Prerequisites
+
+- **Python:** 3.8+ (use a virtual environment)
+- **Install packages:**
+
+```bash
+pip install google-cloud-aiplatform google-cloud-storage datasets pandas matplotlib seaborn
+```
+
+> Note: `datasets` is only required for Hugging Face dataset manipulation; plotting requires `pandas`, `matplotlib`, and `seaborn`.
+
+## 1) Create/refresh the combined benchmark JSONL
 
 Quick overview
 - Convert raw benchmark files -> `combined_benchmarks.jsonl` using `convert_benchmarks_to_jsonl.py`.
@@ -44,11 +74,11 @@ The converter reads `.json` and `.jsonl` files recursively and writes records in
 }
 ```
 
-2) Evaluate your deployed Vertex endpoint
+## 2) Evaluate your deployed Vertex endpoint
 
-The evaluator composes a prompt from the system + user messages and sends it to the endpoint. It supports batching, periodic flushes and resumable checkpoints to GCS.
+The evaluator composes a prompt from the system + user messages and sends it to the endpoint. It supports batching, periodic flushes, and resumable checkpoints to GCS.
 
-Basic usage (no batching):
+**Basic usage (no batching):**
 
 ```bash
 python evaluate_vertex_benchmarks.py \
@@ -59,7 +89,7 @@ python evaluate_vertex_benchmarks.py \
   --output results.jsonl
 ```
 
-Batched + flush + GCS upload + resume example:
+**Batched + flush + GCS upload + resume example:**
 
 ```bash
 python evaluate_vertex_benchmarks.py \
@@ -90,9 +120,9 @@ Behavior and resumability
 - The script writes every flush as a temporary part file: `<output_basename>.partN.jsonl`, uploads that part to GCS (if `--gcs-bucket`), writes a checkpoint `checkpoint.json` to GCS with fields `{processed, part_index}`, and deletes the local part file. The local combined file is appended to as it runs.
 - On resume (`--resume`) the script reads the checkpoint on GCS (if present) and continues from the next part index. If no checkpoint exists, it will inspect existing part files in GCS and local combined file to infer progress.
 
-3) Compute metrics
+## 3) Compute metrics
 
-If your input/combined file contains labels (the converter may include `label` when input entries had `answer`) you can compute exact-match accuracy:
+If your input/combined file contains labels (the converter may include `label` when input entries had `answer`) you can compute exact-match accuracy.
 
 ```bash
 python compute_metrics.py --results results.jsonl --metric exact_match
@@ -112,3 +142,27 @@ Adapter artifacts and next steps
 
 Contact
 - If you want me to adapt the extractor to your endpoint’s exact response schema, add parallel predict concurrency, or enable GCS compose of parts into one object server-side, tell me which and I will implement it.
+
+
+**Visual Gallery**
+
+Below are the comparison plots produced by `scripts/plot_judgments.py`. Images are embedded for quick inspection; click to open the full-size PNG in your viewer.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/b52c9770f8e2fd8ec6ee1ad58fa8910b2a4b3d49/assets/compare.correct_by_model.png" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/b52c9770f8e2fd8ec6ee1ad58fa8910b2a4b3d49/assets/compare.mean_ratings_by_model.png" alt="Mean ratings by model" width="860" style="margin:8px;"/>
+</p>
+
+## Metrics Explained
+
+The plots above summarize the following fields commonly present in the judgment JSONL. Use these descriptions to interpret each visualization:
+
+- `correct_answer` — a categorical/boolean indicator showing whether the model's final answer matched the reference. The stacked percent chart (`compare.correct_by_model.png`) displays the share of correct vs incorrect responses for each model.
+
+- `did_it_solve_in_easy_and_fast_approach` — a judge's assessment of whether the solution was both correct and presented in a concise, efficient way. Higher values (or `True`) indicate solutions that are not only correct but also elegantly brief.
+
+- `easy_to_understand_explanation` — a readability/clarity rating for the model's explanation. Use boxplots and mean bars to compare which model provides clearer, more consistent explanations.
+

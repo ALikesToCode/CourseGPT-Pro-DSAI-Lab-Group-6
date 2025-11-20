@@ -217,15 +217,57 @@ Data handling focuses on how user queries and prompts are processed:
 
 #### 5.1.2. Math Agent
 
-- **Role:** Solve mathematical questions and provide step-by-step explanations.
-- **Model Behavior:**
-  - Encouraged to show intermediate steps and reasoning.
-  - Avoid hallucination in numeric results.
-- **Hyperparameters:**
-  - Temperature very low (0.0–0.2) to reduce variability.
-  - Top-P also relatively low to maintain deterministic reasoning.
-- **Tools (Future-Ready):**
-  - Ability to integrate with a calculator or symbolic math library.
+#### 5.1.2. Math Agent
+
+Overview
+
+The Math Agent solves mathematical problems with clear, step-by-step reasoning and concise final answers for educational use. The implementation prioritizes a balance between model capability and deployability by using instruction-tuned backbones with LoRA adapters for efficient fine-tuning on the MathX-5M dataset.
+
+Key responsibilities
+
+- Produce correct final answers and expose intermediate reasoning steps for pedagogy.
+- Favor deterministic decoding (low temperature, conservative sampling) to reduce numeric variability.
+- Optionally integrate numeric verification tools (calculators, symbolic solvers) when available to validate outputs.
+
+Implementation & important files
+
+- Location: `Milestone-5/math-agent/` (evaluation & plotting) and `Milestone-4/math-agent/` (Vertex tuning helpers).
+- Notable scripts:
+  - `prepare_vertex_tuning.py` — prepare and upload JSONL training/validation splits for Vertex tuning.
+  - `launch_vertex_tuning.py` — example launcher for Vertex tuning jobs (Gemma/Qwen examples).
+  - `convert_benchmarks_to_jsonl.py` — convert raw benchmark files into evaluation JSONL.
+  - `evaluate_vertex_benchmarks.py` — run inference against Vertex endpoints (supports batching, flushes, resumable checkpoints).
+  - `compute_metrics.py` — compute exact-match and numeric equality metrics.
+  - `scripts/plot_judgments.py` — generate comparison visuals (saved to `Milestone-5/math-agent/plots/`).
+
+Modeling choices & dataset
+
+- Typical backbone used in experiments: `google/gemma-3-4b-it` (Gemma-3-4B instruction-tuned) — chosen for its balance of accuracy and resource footprint. Other alternatives evaluated include Qwen3-32B and LLaMA variants.
+- Training data: `XenArcAI/MathX-5M` — a large step-by-step math dataset (used in streaming/subset mode to keep experiments tractable).
+
+LoRA configuration (recommended)
+
+- Use LoRA adapters for parameter-efficient tuning. Typical settings used in experiments:
+  - Rank `r = 16`, alpha `α = 32`.
+  - Target modules: attention projections and selected FFN projections (e.g., `q_proj`, `k_proj`, `v_proj`, `o_proj`, `up_proj`, `down_proj`).
+  - Dropout ~0.05 and conservative learning rate (e.g., 2e-4) with gradient accumulation when needed.
+
+Training & tuning notes
+
+- Load MathX-5M in streaming mode and sample deterministic subsets for reproducible experiments.
+- Combine LoRA with mixed precision (BF16/FP16), gradient checkpointing and gradient accumulation to fit tuning on 12–24 GB GPUs.
+- Monitor exact-match on validation splits and inspect example reasoning traces to assess step-by-step quality beyond final-answer metrics.
+
+Evaluation & benchmarks
+
+- Primary metrics: exact-match accuracy for final answers, step-by-step reasoning quality (rubric/manual), robustness to paraphrases, and perplexity diagnostics.
+- Visualization: `scripts/plot_judgments.py` produces comparison plots (mean ratings, boxplots, correct-answer percentages, score overlays) saved to `Milestone-5/math-agent/plots/`.
+
+Limitations & considerations
+
+- Quantifying step-by-step reasoning quality requires human/rubric evaluation; final-answer metrics can mask flawed reasoning.
+- Large backbones (e.g., Qwen3-32B, Gemma-27B) demand more compute and memory; LoRA reduces resource needs but does not eliminate infrastructure demands.
+- Use a mix of automated metrics and manual inspection when selecting models for production.
 
 #### 5.1.3. Programming Agent
 
@@ -285,23 +327,21 @@ Several rounds of tuning were applied:
 
 ### 6.1. Testing Strategy
 
-The system was evaluated using both automated tests and manual inspection:
+Below are representative comparison plots produced by the Math Agent evaluation tooling. These are saved under `Milestone-5/math-agent/plots/` when you run the plotting utility.
 
-- **Unit Testing (Agent-Level):**
-  - Test cases for router decisions (labeled dataset of queries).
-  - Math Agent: verification against known correct solutions.
-  - Programming Agent: sample problems with expected outputs or correct code patterns.
-- **Integration Testing (End-to-End):**
-  - Full conversations executed through the frontend.
-  - Verifying:
-    - Routing correctness.
-    - Response coherence.
-    - Latency and stability.
+<p align="center">
+  <img src="assets/compare.correct_by_model.png" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
+</p>
 
-Evaluation results (example)
+<p align="center">
+  <img src="assets/compare.mean_ratings_by_model.png" alt="Mean ratings by model" width="860" style="margin:8px;"/>
+</p>
 
-![Evaluation Results](assets/evaluation_results.png)
+**Conclusions from the plots & model selection**
 
+The comparison visuals (correct-answer percentage, mean ratings and distribution boxplots) show a consistent pattern: Gemma-based adapters (the Gemma‑3 family used in our Milestone experiments) deliver the best trade-off between accuracy, consistency and operational cost. In the plots Gemma variants tend to have high mean ratings, tighter rating distributions (lower variance) and competitive correct-answer shares. Qwen3‑32B often matches or slightly exceeds Gemma on a few absolute metrics, but it requires substantially greater compute and memory resources — making it a strong premium option when infrastructure permits. Llama-family variants performed reasonably but displayed wider variance and, in some metrics, lower mean ratings than Gemma/Qwen in our runs.
+
+Recommendation: adopt Gemma (LoRA adapters) as the primary Math Agent for production and continued tuning due to its balance of performance and deployability; reserve Qwen3‑32B for targeted high‑resource evaluations or final-stage comparisons when maximum absolute performance is required.
 
 
 ### 6.3. Comparative Analysis
@@ -314,6 +354,7 @@ The CourseGPT agentic approach was compared against a baseline:
   - Code answers were less consistent and sometimes lacked proper structure.
   - CourseGPT provided more reliable math and programming results due to specialization.
   - The agent-based architecture also offered better modularity and made debugging and improvements easier (e.g., only improve the Math Agent without changing others).
+
 
 ---
 
