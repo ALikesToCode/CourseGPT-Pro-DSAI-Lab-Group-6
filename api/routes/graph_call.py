@@ -153,11 +153,17 @@ async def _fetch_rag_context(
         query = f"{prompt.strip()}\n\nDocument context:\n{_truncate_text(additional_context, 1500)}"
 
     payload: Dict[str, Any] = {"query": query, "max_num_results": DEFAULT_RAG_RESULTS}
+    # Safety: ensure no filters key slips through to Cloudflare to avoid 7001 errors
+    payload.pop("filters", None)
 
     try:
         response = await ai_service.search(payload)
     except (CloudflareConfigurationError, CloudflareRequestError) as exc:
-        logger.warning("Unable to fetch RAG context: %s", exc)
+        msg = str(exc)
+        if "filters" in msg.lower():
+            logger.info("Skipping RAG fetch due to filters validation: %s", msg)
+        else:
+            logger.warning("Unable to fetch RAG context: %s", msg)
         return []
     except Exception as exc:  # noqa: BLE001
         logger.exception("Unexpected error during RAG fetch")
