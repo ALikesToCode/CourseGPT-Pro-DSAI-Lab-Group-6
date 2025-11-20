@@ -150,8 +150,9 @@ The intent classification leverages both heuristic patterns and LLM reasoning:
 
 Agentic workflow diagram
 
-![Agent Graph](assets/agent_graph.png)
-
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/refs/heads/main/assets/graph.png" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
+</p>
 
 #### 4.2.3. Inter-Agent Communication: State Management
 
@@ -167,7 +168,9 @@ LangGraph maintains a **shared state** that can be passed across nodes:
 
 Architecture diagram
 
-![System Architecture](assets/architecture_diagram.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/refs/heads/main/assets/agentic_architecture.png" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
+</p>
 
 
 ### 4.3. Data Handling
