@@ -182,10 +182,6 @@ Architecture diagram
 
 Data handling focuses on how user queries and prompts are processed:
 
-- **Input Processing:**
-  - Sanitizing user text.
-  - Detecting code blocks.
-  - Stripping extra whitespace, etc.
 - **Prompt Structuring:**
   - Each agent uses a dedicated system prompt designed for its role.
   - Templates may include:
@@ -330,21 +326,6 @@ The LangGraph workflow is built as follows:
   - Once defined, it is compiled into an executable graph that can be invoked by the backend.
 - The compiled graph is then integrated into the FastAPI backend, which calls it asynchronously for each request.
 
-### 5.3. Tuning and Optimization
-
-Several rounds of tuning were applied:
-
-- **Prompt Refinement:**
-  - Clarified agent roles.
-  - Added examples of correct and incorrect behavior in the router prompt.
-  - Added detailed instructions for step-by-step reasoning in the Math Agent prompt.
-- **Hyperparameter Adjustments:**
-  - Lowered temperature and Top-P for Math and Programming to avoid hallucination and randomness.
-  - Slightly higher temperature for General Agent for more natural language.
-- **Performance vs. Cost Trade-Offs:**
-  - Constrained max tokens for the router to reduce cost.
-  - Allowed larger context for code and math explanations where needed.
-
 ---
 
 ## 6. Evaluation & Analysis (Milestone 5)
@@ -420,18 +401,37 @@ Note on the "did it stop midway" metric: we did not include a separate plot for 
 ### 7.1. Backend Infrastructure (FastAPI)
 
 The backend is implemented with FastAPI:
+- **API Endpoints (routes):**
+  - `GET /` (health): simple service health check that returns `{"status": "ok", "message": "CourseGPT graph service running"}`. Implemented in `api/routes/health.py`.
 
-- **API Endpoints:**
-  - `/chat` (POST): receives user message and session context.
-  - Internally calls the LangGraph graph execution.
-  - Returns a structured JSON response (message text, code, metadata).
+  - `POST /files/` (upload): upload a document (multipart `file`) to Cloudflare R2. Accepts an optional `prefix` form field to place the object under a folder. Streams the file to R2 and returns metadata about the uploaded object. Implemented in `api/routes/files.py`.
+
+  - `GET /files/` (list): list objects stored in Cloudflare R2. Accepts `prefix` and `limit` query parameters to control filtering and pagination. Implemented in `api/routes/files.py`.
+
+  - `GET /files/view/{object_key:path}`: generate a temporary presigned URL to view/download an R2 object. Accepts `expires_in` query parameter (seconds) and returns a URL plus expiry. Implemented in `api/routes/files.py`.
+
+  - `DELETE /files/{object_key:path}`: delete an object from Cloudflare R2 by its key. Implemented in `api/routes/files.py`.
+
+  - `POST /ai-search/query`: run an AutoRAG-style query against the configured Cloudflare AI Search service. Payload includes `query`, optional `filters`, `max_num_results`, and reranking/ranking options. Implemented in `api/routes/ai_search.py`.
+
+  - `GET /ai-search/files`: list documents that have been registered/ingested in the AI Search index. Supports `page`, `per_page`, and an optional `status_filter` query parameter. Implemented in `api/routes/ai_search.py`.
+
+  - `PATCH /ai-search/sync`: trigger a background sync so the AI Search service ingests the configured R2 data source. Implemented in `api/routes/ai_search.py`.
+
+  - `POST /chat` (graph invocation): the primary graph endpoint (in `api/routes/graph_call.py`) that accepts multipart form-data with the following fields:
+    - `prompt` (string): user prompt.
+    - `thread_id` (string): thread identifier.
+    - `user_id` (string): user identifier.
+    - `file` (optional file upload): only PDF uploads are accepted; the endpoint will attempt OCR (via configured OCR service) or fall back to PDF text extraction.
+    The endpoint will optionally fetch RAG context from AI Search, assemble a config payload, and invoke the compiled LangGraph (`course_graph.invoke(...)`). Returns the latest message produced by the graph in JSON (e.g., `{"latest_message": "..."}`).
+
 - **Request/Response Logic:**
-  - Request includes user query and optional conversation history.
-  - Backend wraps this into the state for the graph.
-  - The response body is formatted in a consistent schema for easy rendering in the frontend.
+  - Requests are typically JSON (for AI Search) or multipart form-data (for `/chat` and file uploads). The backend wraps incoming data into the shared state used by the LangGraph graph where appropriate.
+  - Responses are JSON objects with consistent keys (e.g., `latest_message`, `files`, `url`, `message`) to simplify frontend parsing.
+
 - **Asynchronous Execution:**
-  - Uses `async` endpoints for non-blocking I/O.
-  - Supports concurrent user sessions.
+  - Endpoints use `async` handlers to allow non-blocking I/O and concurrent requests.
+  - External calls (R2 storage, Cloudflare AI Search, OCR service) are made asynchronously when possible and errors are proxied as appropriate HTTP status codes.
 
 ### 7.2. Frontend Implementation (Streamlit)
 
