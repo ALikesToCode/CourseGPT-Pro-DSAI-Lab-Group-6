@@ -234,8 +234,8 @@ html.dark-mode .stButton>button:hover {
 
 /* Remove default Streamlit padding to allow full viewport usage */
 .block-container {
-    padding-top: 2rem !important;
-    padding-bottom: 0 !important;
+    padding-top: 3rem !important;
+    padding-bottom: 5rem !important; /* Add padding at bottom for sticky footer */
     max-width: 100% !important;
 }
 
@@ -243,19 +243,16 @@ html.dark-mode .stButton>button:hover {
 .chat-column {
     display: flex;
     flex-direction: column;
-    height: 85vh; /* Safer height to ensure visibility */
+    /* Allow content to grow naturally, scrolling handled by window or parent */
     position: relative;
 }
 
 /* Scrollable message area */
 .chat-window {
-    flex: 1;
-    overflow-y: auto;
-    padding-bottom: 120px; /* Space for the sticky composer */
-    padding-right: 10px; /* Avoid scrollbar overlap */
     display: flex;
     flex-direction: column;
     gap: 16px;
+    margin-bottom: 20px;
 }
 
 /* Sticky composer at the bottom */
@@ -267,8 +264,9 @@ html.dark-mode .stButton>button:hover {
     background: var(--bg-light);
     padding: 20px;
     border-top: 1px solid rgba(0,0,0,0.05);
-    z-index: 100;
+    z-index: 9999; /* High z-index to ensure it's on top */
     backdrop-filter: blur(10px);
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
 }
 
 /* Adjust composer width to match container */
@@ -279,8 +277,9 @@ html.dark-mode .stButton>button:hover {
 
 /* Dark mode adjustments for sticky composer */
 html.dark-mode .composer-sticky {
-    background: rgba(15, 17, 21, 0.9);
+    background: rgba(15, 17, 21, 0.95);
     border-top: 1px solid rgba(255,255,255,0.05);
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
 }
 
 """
