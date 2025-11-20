@@ -201,80 +201,120 @@ Data handling focuses on how user queries and prompts are processed:
 
 ---
 
+
 ## 5. Model Development and Hyperparameter Tuning (Milestone 4)
 
 ### 5.1. The Agent Ecosystem (Model Configuration)
 
-#### 5.1.1. Router Agent
+---
 
-- **Role:** Determine which specialized agent should handle the request.
-- **Prompt Characteristics:**
-  - Explicit instructions: classify strictly into MATH / PROGRAMMING / GENERAL.
-  - Encourage deterministic output format (e.g., JSON or fixed labels).
-- **Hyperparameters:**
-  - Low temperature (e.g., 0.0–0.2) for consistent routing decisions.
-  - Limited maximum tokens since responses are short.
+### 5.1.1. Router Agent
 
-#### 5.1.2. Math Agent
+**Role:**  
+Selects the appropriate specialized agent to handle an incoming request.
 
-Overview
+**Prompt Characteristics:**
 
-The Math Agent is responsible for solving mathematical problems with clear, step-by-step reasoning and providing concise final answers suitable for educational use. The implementation focuses on a balance between capability and deployability: a mid‑sized instruction-tuned backbone (Gemma‑3‑4B in our Milestone work) + LoRA adapters for parameter-efficient fine‑tuning on the MathX‑5M dataset.
+- Contains explicit classification instructions.
+- Must strictly route queries into one of: **MATH**, **PROGRAMMING**, or **GENERAL**.
+- Uses deterministic output formats (e.g., fixed labels or JSON).
 
-Key responsibilities
+**Hyperparameters:**
 
-- Produce correct final answers and expose intermediate reasoning steps for pedagogy.
-- Prefer deterministic outputs (low temperature, conservative decoding) to reduce variability in numeric results.
-- Optionally integrate calculators or symbolic math tools for verified numeric computation when available.
+- **Temperature:** Low (0.0–0.2) for consistent routing.
+- **Max Tokens:** Small, as outputs are short.
 
-Modeling choices & dataset
+---
 
-- Selected backbone in experiments: **google/gemma-3-4b-it** (Gemma‑3‑4B instruction-tuned) as a balanced, efficient choice; alternatives evaluated include Qwen3‑32B and Llama variants (see Milestone‑3 and Milestone‑4 notes).
-- Training dataset: **XenArcAI/MathX-5M** — a large step‑by‑step math dataset containing problems, reasoning traces and final answers; used in streaming/subset mode for efficient fine‑tuning.
+### 5.1.2. Math Agent
 
-LoRA configuration (recommended)
+**Overview**  
+The Math Agent solves mathematical problems with detailed, step-by-step reasoning and clear final answers. For Milestone-4 experiments, the agent uses a mid-sized instruction-tuned model (**Gemma-3-4B-IT**) with LoRA adapters trained on the **MathX-5M** dataset, balancing performance and compute efficiency.
 
-- LoRA adapters used for parameter-efficient tuning. Typical tested settings:
-  - Rank `r = 16`, alpha `α = 32`.
-  - Target modules: attention projections and selected FFN projections (q/k/v/o_proj, gate_proj, up_proj, down_proj).
-  - Dropout: 0.05; conservative learning rate (e.g., 2e‑4) with gradient accumulation when needed.
+**Key Responsibilities**
 
-Training & tuning notes
+- Provide correct final answers.
+- Include pedagogical step-by-step reasoning.
+- Maintain deterministic outputs (low temperature).
+- Optionally integrate symbolic or numeric tools for verified computation.
 
-- Use streaming dataset loading to avoid materializing MathX‑5M in memory; sample deterministic subsets for reproducible experiments.
-- Employ mixed precision (BF16/FP16), gradient checkpointing and gradient accumulation to fit training on 12–24GB GPUs.
-- Monitor exact‑match on held‑out validation splits; manually inspect reasoning traces for step‑by‑step quality.
+**Modeling Choices & Dataset**
 
-Evaluation & benchmarks
+- **Backbone:** `google/gemma-3-4b-it` (primary); alternatives tested include Qwen3-32B and Llama models.
+- **Training Dataset:** `XenArcAI/MathX-5M` — large-scale, step-wise math reasoning dataset.  
+  Loaded in streaming/subset mode for efficiency.
 
-- Metrics: exact‑match accuracy on final answers, step‑by‑step reasoning quality (rubric/manual), robustness to prompt paraphrases, and perplexity diagnostics.
-- Visualizations: `scripts/plot_judgments.py` generates comparison plots such as mean ratings by model, rating boxplots, correct-answer percentages, and score overlays (see `Milestone-5/math-agent/plots/`).
+**Recommended LoRA Configuration**
 
-Limitations & considerations
+- **Rank:** `r = 16`
+- **Alpha:** `α = 32`
+- **Target Modules:**  
+  `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
+- **Dropout:** `0.05`
+- **Learning Rate:** `2e-4` (conservative)
+- Gradient accumulation and mixed precision (BF16/FP16) for single-GPU compatibility.
 
-- Step‑by‑step reasoning quality is difficult to quantify automatically — include manual/rubric checks.
-- Large backbones (Qwen3‑32B, Gemma‑27B/4B) require substantial compute and careful memory tuning; LoRA reduces resource needs but does not eliminate it.
-- Evaluation on final answers can mask poor intermediate reasoning; use a combination of metrics and manual review.
+**Training & Tuning Notes**
 
-#### 5.1.3. Programming Agent
+- Use deterministic sampling to ensure reproducibility.
+- Apply gradient checkpointing, accumulation, and mixed precision to fit within 12–24 GB GPUs.
+- Track performance on held-out validation sets.
+- Manually inspect reasoning traces to evaluate step-by-step quality.
 
-- **Role:** Support programming-related tasks, such as code writing, debugging, and explaining snippets.
-- **Model Behavior:**
-  - Generate syntactically correct and logically coherent code.
-  - Explain errors and propose fixes.
-- **Hyperparameters:**
-  - Temperature very low (0.0) to minimize randomness.
-  - Sufficient max tokens to return full code blocks and explanations.
+**Evaluation & Benchmarks**
 
-#### 5.1.4. General Agent
+- **Metrics:**  
+  - Final answer exact-match accuracy  
+  - Reasoning quality (manual/rubric-based)  
+  - Robustness to prompt paraphrasing  
+  - Perplexity diagnostics
+- **Visualizations:**  
+  Use `scripts/plot_judgments.py` to generate mean ratings, boxplots, score overlays, and correct-answer distributions (see `Milestone-5/math-agent/plots/`).
 
-- **Role:** Address conceptual, theoretical, and general academic questions.
-- **Model Behavior:**
-  - More conversational and explanatory.
-  - Capable of summarization and high-level reasoning.
-- **Hyperparameters:**
-  - Moderately higher temperature (e.g., 0.7) to allow more diverse, natural language generation.
-  - Balanced Top-P to retain coherence.
+**Limitations & Considerations**
+
+- Automated metrics struggle with reasoning-quality evaluation—manual review remains essential.
+- Larger backbones (Qwen3-32B, Gemma-27B) require careful memory optimization.
+- Correct final answers can hide flawed intermediate reasoning; multi-metric evaluation is important.
+
+---
+
+### 5.1.3. Programming Agent
+
+**Role:**  
+Handles programming tasks such as code generation, debugging, documentation, and explanations.
+
+**Model Behavior:**
+
+- Produces syntactically correct, coherent, and runnable code.
+- Identifies problems and suggests corrections.
+- Provides clear, structured explanations.
+
+**Hyperparameters:**
+
+- **Temperature:** 0.0 for deterministic results.
+- **Max Tokens:** High enough to generate full code blocks and explanations.
+
+---
+
+### 5.1.4. General Agent
+
+**Role:**  
+Responds to conceptual, theoretical, analytical, and general academic or conversational questions.
+
+**Model Behavior:**
+
+- Natural, explanatory, and conversational tone.
+- Good for summaries and high-level reasoning.
+- Creative and diverse phrasing allowed.
+
+**Hyperparameters:**
+
+- **Temperature:** ~0.7 for expressive but coherent output.
+- **Top-P:** Moderate to maintain fluency and topic alignment.
+
+---
+
 
 ### 5.2. Building the Graph
 
