@@ -217,57 +217,44 @@ Data handling focuses on how user queries and prompts are processed:
 
 #### 5.1.2. Math Agent
 
-#### 5.1.2. Math Agent
-
 Overview
 
-The Math Agent solves mathematical problems with clear, step-by-step reasoning and concise final answers for educational use. The implementation prioritizes a balance between model capability and deployability by using instruction-tuned backbones with LoRA adapters for efficient fine-tuning on the MathX-5M dataset.
+The Math Agent is responsible for solving mathematical problems with clear, step-by-step reasoning and providing concise final answers suitable for educational use. The implementation focuses on a balance between capability and deployability: a mid‑sized instruction-tuned backbone (Gemma‑3‑4B in our Milestone work) + LoRA adapters for parameter-efficient fine‑tuning on the MathX‑5M dataset.
 
 Key responsibilities
 
 - Produce correct final answers and expose intermediate reasoning steps for pedagogy.
-- Favor deterministic decoding (low temperature, conservative sampling) to reduce numeric variability.
-- Optionally integrate numeric verification tools (calculators, symbolic solvers) when available to validate outputs.
-
-Implementation & important files
-
-- Location: `Milestone-5/math-agent/` (evaluation & plotting) and `Milestone-4/math-agent/` (Vertex tuning helpers).
-- Notable scripts:
-  - `prepare_vertex_tuning.py` — prepare and upload JSONL training/validation splits for Vertex tuning.
-  - `launch_vertex_tuning.py` — example launcher for Vertex tuning jobs (Gemma/Qwen examples).
-  - `convert_benchmarks_to_jsonl.py` — convert raw benchmark files into evaluation JSONL.
-  - `evaluate_vertex_benchmarks.py` — run inference against Vertex endpoints (supports batching, flushes, resumable checkpoints).
-  - `compute_metrics.py` — compute exact-match and numeric equality metrics.
-  - `scripts/plot_judgments.py` — generate comparison visuals (saved to `Milestone-5/math-agent/plots/`).
+- Prefer deterministic outputs (low temperature, conservative decoding) to reduce variability in numeric results.
+- Optionally integrate calculators or symbolic math tools for verified numeric computation when available.
 
 Modeling choices & dataset
 
-- Typical backbone used in experiments: `google/gemma-3-4b-it` (Gemma-3-4B instruction-tuned) — chosen for its balance of accuracy and resource footprint. Other alternatives evaluated include Qwen3-32B and LLaMA variants.
-- Training data: `XenArcAI/MathX-5M` — a large step-by-step math dataset (used in streaming/subset mode to keep experiments tractable).
+- Selected backbone in experiments: **google/gemma-3-4b-it** (Gemma‑3‑4B instruction-tuned) as a balanced, efficient choice; alternatives evaluated include Qwen3‑32B and Llama variants (see Milestone‑3 and Milestone‑4 notes).
+- Training dataset: **XenArcAI/MathX-5M** — a large step‑by‑step math dataset containing problems, reasoning traces and final answers; used in streaming/subset mode for efficient fine‑tuning.
 
 LoRA configuration (recommended)
 
-- Use LoRA adapters for parameter-efficient tuning. Typical settings used in experiments:
+- LoRA adapters used for parameter-efficient tuning. Typical tested settings:
   - Rank `r = 16`, alpha `α = 32`.
-  - Target modules: attention projections and selected FFN projections (e.g., `q_proj`, `k_proj`, `v_proj`, `o_proj`, `up_proj`, `down_proj`).
-  - Dropout ~0.05 and conservative learning rate (e.g., 2e-4) with gradient accumulation when needed.
+  - Target modules: attention projections and selected FFN projections (q/k/v/o_proj, gate_proj, up_proj, down_proj).
+  - Dropout: 0.05; conservative learning rate (e.g., 2e‑4) with gradient accumulation when needed.
 
 Training & tuning notes
 
-- Load MathX-5M in streaming mode and sample deterministic subsets for reproducible experiments.
-- Combine LoRA with mixed precision (BF16/FP16), gradient checkpointing and gradient accumulation to fit tuning on 12–24 GB GPUs.
-- Monitor exact-match on validation splits and inspect example reasoning traces to assess step-by-step quality beyond final-answer metrics.
+- Use streaming dataset loading to avoid materializing MathX‑5M in memory; sample deterministic subsets for reproducible experiments.
+- Employ mixed precision (BF16/FP16), gradient checkpointing and gradient accumulation to fit training on 12–24GB GPUs.
+- Monitor exact‑match on held‑out validation splits; manually inspect reasoning traces for step‑by‑step quality.
 
 Evaluation & benchmarks
 
-- Primary metrics: exact-match accuracy for final answers, step-by-step reasoning quality (rubric/manual), robustness to paraphrases, and perplexity diagnostics.
-- Visualization: `scripts/plot_judgments.py` produces comparison plots (mean ratings, boxplots, correct-answer percentages, score overlays) saved to `Milestone-5/math-agent/plots/`.
+- Metrics: exact‑match accuracy on final answers, step‑by‑step reasoning quality (rubric/manual), robustness to prompt paraphrases, and perplexity diagnostics.
+- Visualizations: `scripts/plot_judgments.py` generates comparison plots such as mean ratings by model, rating boxplots, correct-answer percentages, and score overlays (see `Milestone-5/math-agent/plots/`).
 
 Limitations & considerations
 
-- Quantifying step-by-step reasoning quality requires human/rubric evaluation; final-answer metrics can mask flawed reasoning.
-- Large backbones (e.g., Qwen3-32B, Gemma-27B) demand more compute and memory; LoRA reduces resource needs but does not eliminate infrastructure demands.
-- Use a mix of automated metrics and manual inspection when selecting models for production.
+- Step‑by‑step reasoning quality is difficult to quantify automatically — include manual/rubric checks.
+- Large backbones (Qwen3‑32B, Gemma‑27B/4B) require substantial compute and careful memory tuning; LoRA reduces resource needs but does not eliminate it.
+- Evaluation on final answers can mask poor intermediate reasoning; use a combination of metrics and manual review.
 
 #### 5.1.3. Programming Agent
 
