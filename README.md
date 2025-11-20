@@ -400,9 +400,6 @@ Limitations
 - Current metrics depend on trainer exports (Hugging Face) and validation splits; full end-to-end structured inference scoring is not yet automated for all checkpoints.
 - BLEU-style or token-overlap metrics under-reward semantically correct but paraphrased plans; schema-aware scoring alleviates but does not eliminate this.
 
-Artifacts
-- Scripts and outputs referenced in this evaluation include: `collect_router_metrics.py`, `schema_score.py`, `generate_router_benchmark.py`, `router_eval_metrics.json`, and `benchmarks/router_benchmark_hard.jsonl`.
-
 
 ### 6.3 Math Agent
 
