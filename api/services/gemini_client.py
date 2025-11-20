@@ -131,7 +131,7 @@ class Gemini3Client:
                 if "google_search" in nt:
                     all_tools.append(types.Tool(google_search=types.GoogleSearch()))
                 elif "code_execution" in nt:
-                    all_tools.append(types.Tool(code_execution=types.CodeExecution()))
+                    all_tools.append(types.Tool(code_execution=types.ToolCodeExecution()))
 
         if all_tools:
             config["tools"] = all_tools

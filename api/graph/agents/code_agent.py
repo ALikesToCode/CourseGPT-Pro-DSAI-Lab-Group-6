@@ -15,16 +15,9 @@ code_agent_tools = [general_agent_handoff]
 code_agent_prompt = """You are a code assistant that helps users with programming tasks.
 When given a request, you should determine if any of the available tools can help you accomplish the task.
 If a tool is needed, call the appropriate tool with the necessary parameters.
-If no tool is needed, provide the best possible answer based on your knowledge.
-Available tools:
-
-{tools_list}
-When responding, follow this format:
-If using a tool:
-Tool: <tool_name>
-Input: <input_parameters>
-If not using a tool:
-Answer: <your_answer>
+If no tool is needed, provide the best possible answer based on your knowledge. Do not call the router handoff tools—you have already been selected as the code specialist.
+Available tools:\n{tools_list}
+When responding, follow this format:\nIf using a tool:\nTool: <tool_name>\nInput: <input_parameters>\nIf not using a tool:\nAnswer: <your_answer>
 """
 
 
@@ -47,11 +40,15 @@ def code_agent(state: CourseGPTState):
             api_key=settings.google_api_key,
             model=settings.gemini_model
         )
+        llm.enable_google_search()
         llm.enable_code_execution()
         
     llm.bind_tools(code_agent_tools, parallel_tool_calls=False)
 
-    system_message = SystemMessage(content=code_agent_prompt)
+    tools_list = "\n".join(
+        [f"- `{tool.name}`: {tool.description}" for tool in code_agent_tools]
+    ) or "- (no tools enabled)"
+    system_message = SystemMessage(content=code_agent_prompt.format(tools_list=tools_list))
 
     response = llm.invoke([system_message] + state["messages"])
 

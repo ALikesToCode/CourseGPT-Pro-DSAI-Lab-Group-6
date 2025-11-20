@@ -16,16 +16,9 @@ general_agent_tools = [code_agent_handoff]
 general_agent_prompt = """You are a general-purpose assistant that helps users with project planning, coordination, and integration tasks.
 When given a request, determine if any of the available tools can help you accomplish the task.
 If a tool is needed, call the appropriate tool with the necessary parameters.
-If no tool is needed, provide the best possible answer based on your knowledge.
-Available tools:
-
-{tools_list}
-When responding, follow this format:
-If using a tool:
-Tool: <tool_name>
-Input: <input_parameters>
-If not using a tool:
-Answer: <your_answer>
+If no tool is needed, provide the best possible answer based on your knowledge. Do not re-route back to the router; only use tools when they clearly add value.
+Available tools:\n{tools_list}
+When responding, follow this format:\nIf using a tool:\nTool: <tool_name>\nInput: <input_parameters>\nIf not using a tool:\nAnswer: <your_answer>
 """
 
 
@@ -51,7 +44,10 @@ def general_agent(state: CourseGPTState):
 
     llm.bind_tools(general_agent_tools, parallel_tool_calls=False)
 
-    system_message = SystemMessage(content=general_agent_prompt)
+    tools_list = "\n".join(
+        [f"- `{tool.name}`: {tool.description}" for tool in general_agent_tools]
+    ) or "- (no tools enabled)"
+    system_message = SystemMessage(content=general_agent_prompt.format(tools_list=tools_list))
 
     response = llm.invoke([system_message] + state["messages"])
 
