@@ -148,17 +148,11 @@ async def _fetch_rag_context(
     if not getattr(ai_service, "is_configured", False):
         return []
 
-    filters: Dict[str, Any] = {}
-    if user_id:
-        filters["user_id"] = user_id
-
     query = prompt.strip()
     if additional_context:
         query = f"{prompt.strip()}\n\nDocument context:\n{_truncate_text(additional_context, 1500)}"
 
     payload: Dict[str, Any] = {"query": query, "max_num_results": DEFAULT_RAG_RESULTS}
-    if filters:
-        payload["filters"] = filters
 
     try:
         response = await ai_service.search(payload)

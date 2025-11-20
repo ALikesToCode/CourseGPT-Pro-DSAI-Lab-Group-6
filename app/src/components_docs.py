@@ -167,7 +167,7 @@ def _render_documents_sidebar(api_client):
         docs = docs_resp.get("files", [])
     except Exception as exc:
         docs = []
-        st.warning(f"Unable to load recent documents: {exc}")
+        st.warning("Documents unavailable (storage not configured). Quick upload is still available.")
     container = st.container()
     with container:
         st.subheader("Documents")
@@ -178,7 +178,7 @@ def _render_documents_sidebar(api_client):
             type=["txt", "md", "pdf"],
             label_visibility="visible",
             key="sidebar_file_uploader",
-            help="Drop a document here to add it to this session.",
+            help="Drop a document here to add it.",
         )
         if uploaded is not None and st.button(
             "Upload to workspace",
@@ -216,7 +216,7 @@ def _render_documents_workspace(api_client):
         docs = docs_resp.get("files", [])
     except Exception as exc:
         docs = []
-        st.warning(f"Unable to list documents: {exc}")
+        st.warning("Document storage not ready. Check Cloudflare R2 settings to enable uploads.")
 
     with container:
         st.markdown('<div class="cg-card doc-panel">', unsafe_allow_html=True)
@@ -243,7 +243,6 @@ def _render_documents_workspace(api_client):
                 _render_empty_state(empty_message)
             else:
                 for d in filtered:
-                    # API returns 'key' as the ID/Name
                     _render_card(d.get("key", "Untitled"), "", [], d["key"], api_client)
 
             preview_id = st.session_state.get("doc_preview")

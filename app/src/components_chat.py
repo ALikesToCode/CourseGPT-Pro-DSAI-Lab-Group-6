@@ -121,16 +121,20 @@ def render_chat(mock_api):
         st.markdown('<div class="cg-card chat-column">', unsafe_allow_html=True)
         header_cols = st.columns([3, 1])
         with header_cols[0]:
-                st.subheader("CourseGPT Workspace")
-                st.write("Context-aware mentor tuned for the CourseGPT curriculum.")
+            st.subheader("CourseGPT Workspace")
+            st.caption("Context-aware mentor tuned for the CourseGPT curriculum.")
         with header_cols[1]:
-                if st.button("Clear conversation", key="clear_chat", use_container_width=True, help="Remove every message in this chat thread"):
-                    st.session_state["chat_history"] = []
-                    chat_history = []
-                    _notify("Conversation cleared.")
+            if st.button("Clear conversation", key="clear_chat", use_container_width=True, help="Remove every message in this chat thread"):
+                st.session_state["chat_history"] = []
+                chat_history = []
+                _notify("Conversation cleared.")
 
         _render_metrics(chat_history)
+
+        st.markdown("---")
         _render_quick_prompts()
+        st.markdown("---")
+
         _render_messages(chat_history)
 
         # Input row
@@ -138,9 +142,10 @@ def render_chat(mock_api):
         if prefill:
             st.session_state["chat_input"] = prefill
 
+        st.markdown("#### Message CourseGPT")
         with st.form("chat_form", clear_on_submit=True):
             user_input = ui.textarea(
-                "Message CourseGPT",
+                "",
                 key="chat_input",
                 value=st.session_state.get("chat_input", ""),
                 placeholder="Ask a question, request a study plan, or paste a snippet to analyze...",
@@ -151,14 +156,12 @@ def render_chat(mock_api):
         if submitted and user_input and user_input.strip():
             chat_history.append({"sender": "user", "text": user_input})
             st.session_state["chat_history"] = chat_history
-            # st.session_state["chat_input"] = ""  # Handled by clear_on_submit=True
 
             ai_ph = st.empty()
             typing = st.empty()
             typing.markdown("<div class='typing'>CourseGPT is synthesizing context…</div>", unsafe_allow_html=True)
 
             response_text = ""
-            # api_client.chat yields chunks (or a single chunk if not streaming)
             for chunk in mock_api.chat(
                 prompt=user_input,
                 thread_id=st.session_state["thread_id"],
