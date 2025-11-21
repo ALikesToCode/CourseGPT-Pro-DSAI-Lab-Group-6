@@ -3,6 +3,7 @@ import sys
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from mangum import Mangum
 
 # Ensure repository root is on sys.path so `api.*` imports resolve when running from /api
 repo_root = Path(__file__).resolve().parent.parent
@@ -24,6 +25,10 @@ app.include_router(graph_call.router, prefix="/graph")
 
 app.mount("/static", StaticFiles(directory=repo_root / "api" / "static"), name="static")
 templates = Jinja2Templates(directory=repo_root / "api" / "templates")
+
+# Expose AWS Lambda-compatible handler so Vercel's Python runtime can invoke
+# the FastAPI app as a serverless function.
+handler = Mangum(app)
 
 
 @app.get("/")
