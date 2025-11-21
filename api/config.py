@@ -66,6 +66,9 @@ class Settings:
 
         self.google_api_key = _env("GOOGLE_API_KEY", "GEMINI_API_KEY")
         self.gemini_model = _env("GEMINI_MODEL", default="gemini-3-pro-preview")
+        self.vertex_project_id = _env("VERTEX_PROJECT_ID", "GCP_PROJECT", "GOOGLE_CLOUD_PROJECT")
+        self.vertex_location = _env("VERTEX_LOCATION", default="us-central1")
+        self.vertex_credentials_b64 = _env("VERTEX_CREDENTIALS_JSON_B64", "VERTEX_CREDENTIALS_BASE64")
         
         self.gemini_fallback_models = []
         i = 1
@@ -107,4 +110,3 @@ def get_settings() -> Settings:
     Cached accessor so Settings is instantiated once per process.
     """
     return Settings()
-

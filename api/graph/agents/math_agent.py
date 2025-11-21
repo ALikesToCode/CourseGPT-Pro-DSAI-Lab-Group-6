@@ -41,7 +41,10 @@ def math_agent(state: CourseGPTState):
         llm = Gemini3Client(
             api_key=settings.google_api_key,
             model=settings.gemini_model,
-            fallback_models=settings.gemini_fallback_models
+            fallback_models=settings.gemini_fallback_models,
+            vertex_project=settings.vertex_project_id,
+            vertex_location=settings.vertex_location,
+            vertex_credentials_b64=settings.vertex_credentials_b64,
         )
         llm.enable_google_search()
         llm.enable_code_execution()

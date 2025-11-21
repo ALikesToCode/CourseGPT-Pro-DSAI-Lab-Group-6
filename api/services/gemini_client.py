@@ -1,7 +1,11 @@
 import os
+import json
+import base64
+import binascii
 from typing import Any, Dict, List, Optional, Union
 from google import genai
 from google.genai import types
+from google.oauth2 import service_account
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 
@@ -10,10 +14,39 @@ class Gemini3Client:
     A wrapper for the Google Gen AI SDK (v1alpha/beta) to support Gemini 3 models
     in a way that is compatible with LangChain's invoke/bind_tools pattern.
     """
-    def __init__(self, api_key: str, model: str = "gemini-3-pro-preview", fallback_models: List[str] = None):
-        self.client = genai.Client(api_key=api_key)
+    def __init__(
+        self,
+        api_key: Optional[str],
+        model: str = "gemini-3-pro-preview",
+        fallback_models: List[str] = None,
+        vertex_project: Optional[str] = None,
+        vertex_location: Optional[str] = None,
+        vertex_credentials_b64: Optional[str] = None,
+    ):
         self.model = model
         self.fallback_models = fallback_models or []
+        self.use_vertex = bool(vertex_project and vertex_credentials_b64)
+
+        if self.use_vertex:
+            try:
+                decoded = base64.b64decode(vertex_credentials_b64)
+                creds_dict = json.loads(decoded)
+            except (binascii.Error, json.JSONDecodeError) as exc:
+                raise ValueError("VERTEX_CREDENTIALS_JSON_B64 is not valid base64-encoded JSON") from exc
+            creds = service_account.Credentials.from_service_account_info(
+                creds_dict,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+            self.client = genai.Client(
+                vertexai=True,
+                project=vertex_project,
+                location=vertex_location or "us-central1",
+                credentials=creds,
+            )
+        else:
+            if not api_key:
+                raise ValueError("Missing GEMINI_API_KEY or Vertex credentials")
+            self.client = genai.Client(api_key=api_key)
         self.tools = []
         self.function_declarations: List[types.FunctionDeclaration] = []
         self.native_tools: List[str] = []

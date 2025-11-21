@@ -36,3 +36,4 @@ models/
 *test.jsonl*
 *train.jsonl*
 .vercel
+key.json
