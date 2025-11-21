@@ -46,7 +46,9 @@ jobs:
 
           toc_lines = ["## Index", ""]
           in_code = False
-          for line in lines:
+          for i, line in enumerate(lines):
+            if start_idx <= i <= end_idx:
+              continue
             if line.strip().startswith("```"):
               in_code = not in_code
               continue
@@ -65,7 +67,7 @@ jobs:
 
           new_lines = lines[: start_idx + 1] + toc_lines + [lines[end_idx]] + lines[end_idx + 1 :]
           if new_lines != lines:
-            path.write_text("\\n".join(new_lines) + "\\n")
+            path.write_text("\n".join(new_lines) + "\n")
           PY
 
       - name: Commit TOC update
