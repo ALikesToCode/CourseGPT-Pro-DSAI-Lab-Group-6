@@ -11,6 +11,7 @@ pytest>=8.0.0
 pypdf>=4.2.0
 langchain-openai
 google-genai
+langchain-google-genai
 jinja2
 aiofiles
 requests-html
