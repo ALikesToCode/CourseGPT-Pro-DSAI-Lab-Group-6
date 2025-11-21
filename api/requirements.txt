@@ -13,3 +13,5 @@ langchain-openai
 google-genai
 jinja2
 aiofiles
+requests-html
+lxml_html_clean
