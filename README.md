@@ -92,6 +92,17 @@ CourseGPT adopts the agentic design, leveraging LangGraph to finely control how 
   - Well-suited for building chat-like interfaces and visualizing results without complex frontend code.
   - Why chosen: Streamlit enables rapid UI prototyping with minimal frontend code, letting us build a usable chat interface quickly for demos and user testing without a separate frontend stack.
 
+### 3.4 Cloudflare AI Search (AutoRAG) Integration
+
+- **What it provides:** Managed retrieval augmented generation (RAG) on top of Cloudflare R2 with automatic crawling/indexing (formerly AutoRAG). We use it to keep our study materials continuously searchable and feed context into the agents.
+- **Prerequisite:** An active Cloudflare R2 subscription (purchase/enable in the R2 dashboard).
+- **Create an AI Search index:** In the Cloudflare dashboard go to **AI Search → Create → Get Started**, then choose a data source:
+  - *R2 bucket* to index uploaded PDFs or notes; or
+  - *Website* to auto-crawl a domain you own and mirror it into R2.
+- **Monitor indexing:** Open the AI Search entry → **Overview** to track Vectorize index creation and crawl progress.
+- **Try it:** Use the built-in **Playground → Search with AI** to sanity-check responses before wiring it to the app.
+- **Connect to CourseGPT:** Use either Workers Binding or the REST API to issue semantic queries from our FastAPI service; this powers the `/graph` agent flow when RAG is enabled. (Reference: [Cloudflare AI Search docs](https://developers.cloudflare.com/ai-search/get-started/)).
+
 These technologies align well with the project’s needs: modular backend orchestration, fast API endpoints, and a simple interactive frontend.
 
 ---

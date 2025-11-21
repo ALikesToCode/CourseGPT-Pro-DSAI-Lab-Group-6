@@ -1934,6 +1934,15 @@ OCR_SERVICE_TOKEN=your_token
 - **Sentry**: Error tracking
 - **DataDog**: Full-stack observability
 
+### 10.5 Cloudflare AI Search (RAG) Setup
+
+- **Purpose:** Managed RAG built on Cloudflare R2 (formerly AutoRAG) keeps study materials continuously indexed and queryable with semantic search, feeding context into CourseGPT responses.
+- **Prerequisite:** Active Cloudflare R2 subscription (enable/purchase in the R2 dashboard before creating AI Search indices).
+- **Create an index:** Dashboard → **AI Search** → **Create → Get Started** → choose either an R2 bucket (index uploaded PDFs/notes) or a Website crawl (automatically mirrors a domain into R2 and indexes it).
+- **Monitor progress:** Open the AI Search entry → **Overview** to watch Vectorize index creation and crawl/indexing status.
+- **Validate responses:** Use the AI Search **Playground → Search with AI** to sanity-check retrieval quality before routing traffic from FastAPI.
+- **Connect to the app:** Bind AI Search via Workers or call the REST API from the FastAPI service to pull semantic results into `/graph` RAG prompts. Reference: [Cloudflare AI Search docs](https://developers.cloudflare.com/ai-search/get-started/). 
+
 ---
 
 ## 11. Results & Discussion
@@ -2152,4 +2161,3 @@ This project was made possible by:
 
 **Team:** DSAI Lab Group 6
 ---
-
