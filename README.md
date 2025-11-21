@@ -3,7 +3,7 @@
 
 ## 1. Abstract
 
-CourseGPT is an intelligent educational assistant designed using a LangGraph-based agentic architecture to support students with subject-specific tasks in mathematics, programming, and general academic queries. Unlike generic chatbots, which often struggle with precise reasoning and specialized tasks, CourseGPT uses a multi-agent workflow to route queries to domain-specialized agents. The system integrates FastAPI for backend API services and Streamlit for an interactive web-based frontend. Experimental evaluation indicates improved intent classification accuracy, better performance on math and coding tasks, and acceptable latency, demonstrating CourseGPT’s effectiveness as a practical student helper chatbot.
+CourseGPT is an educational assistant built as a LangGraph-orchestrated multi-agent system across math, programming, and general academic domains. A router classifies intent and dispatches to specialist agents, each fine-tuned with LoRA/QLoRA adapters and backed by RAG + OCR for document-aware answers. The FastAPI + Streamlit stack provides an async service/UI layer, while Cloudflare R2 + AI Search handles storage and retrieval. Experiments show higher routing accuracy, stronger math/code quality, and acceptable latency versus a single-model baseline, positioning CourseGPT as a research-grade yet deployable student helper.
 
 ---
 
@@ -11,7 +11,7 @@ CourseGPT is an intelligent educational assistant designed using a LangGraph-bas
 
 ### 2.1. Project Overview
 
-Large Language Models (LLMs) have transformed how students access educational assistance by enabling natural language interaction with powerful models. However, single-model conversational systems often lack domain specialization and structured workflows. CourseGPT addresses this gap by designing a multi-agent, LangGraph-based educational assistant tailored for common student needs such as solving math problems, writing and debugging code, and answering general academic questions.
+Large Language Models (LLMs) have transformed access to tutoring, but single-model chatbots struggle with domain specialization, structured workflows, and verifiable outputs. CourseGPT addresses this gap with a LangGraph-based multi-agent design that routes student questions to specialist math, programming, or general agents. The system mixes retrieval-augmented generation (Cloudflare AI Search), OCR for scanned PDFs, and tool hand-offs, packaged behind a FastAPI service and Streamlit UI for rapid iteration.
 
 ### 2.2. Problem Statement
 
@@ -22,7 +22,7 @@ Generic chatbots are typically optimized for broad conversational ability rather
 - Lack of clear separation between types of queries (e.g., mathematical vs. conceptual vs. coding).
 - No explicit routing mechanism to decide which “expert” logic should handle a query.
 
-These limitations motivate the need for a system that can intelligently route user queries to specialized agents.
+These limitations motivate a system that explicitly routes queries to specialists, preserves grounding via retrieval/OCR, and enforces output schemas and rubrics.
 
 ### 2.3. Objectives
 
@@ -35,6 +35,8 @@ The main objectives of this project are:
   - General academic and conceptual queries.
 - To develop a **routing mechanism** that classifies user intent and dispatches queries to the appropriate agent.
 - To provide a user-friendly interface and scalable backend suitable for real student usage.
+- To back answers with RAG + OCR context and lightweight verification (schema and rubric checks).
+- To benchmark routing accuracy, math/code quality, and latency against baselines.
 
 ### 2.4. Scope of the Project
 
@@ -44,7 +46,7 @@ The initial scope of CourseGPT is limited to three major categories of tasks:
 - **Programming:** Code generation, error analysis, debugging, and conceptual explanations (initially focusing on Python; extensible to other languages).
 - **General Queries:** Explanations of concepts, definitions, summarization, and general-purpose Q&A.
 
-Out-of-scope items for the current iteration include advanced domain-specific tools (e.g., physics simulation engines), full exam-generation systems, and deep integration with institutional learning management systems.
+Out-of-scope for this iteration: discipline-specific agents (e.g., physics labs), full LMS integration, high-stakes exam generation, and unmanaged web browsing.
 
 ---
 
@@ -52,24 +54,15 @@ Out-of-scope items for the current iteration include advanced domain-specific to
 
 ### 3.1. Evolution of Educational Chatbots
 
-Educational chatbots have evolved significantly over the last few decades:
-
-- **Rule-Based Systems:** Early systems such as ELIZA depended on pattern matching and hand-crafted rules. They lacked true understanding and were difficult to scale.
-- **Traditional NLP & ML-Based Systems:** With statistical methods, chatbots gained limited contextual understanding but still struggled with complex reasoning.
-- **LLM-Based Systems:** Modern transformers and LLMs (e.g., GPT-style models) provide robust language understanding and generation. They support open-ended dialogue and can be adapted to educational tasks with prompt engineering and fine-tuning.
-
-The latest research focuses on combining LLMs with tool use, retrieval systems, and multi-agent orchestration for more reliable, task-specific behavior.
+Educational chatbots progressed from brittle rule engines (ELIZA) to statistical NLP, and now to transformer-based LLMs. Current research layers tools, retrieval, and multi-agent orchestration on top of LLMs to improve factuality and specialization—exactly the pattern CourseGPT follows.
 
 ### 3.2. Agentic Workflows vs. RAG
 
 Two prominent architectural paradigms are:
 
-- **Single-Chain or Monolithic LLM Workflows:** A single LLM processes input and returns output. This is simple but not modular, and expertise is not clearly separated.
-- **Retrieval-Augmented Generation (RAG):** The LLM is augmented with document retrieval. This improves factual correctness but does not inherently provide task specialization (e.g., math vs. code reasoning).
-- **Agentic / Multi-Agent Workflows:** Multiple LLM-based agents, each with specific roles (e.g., router, math expert, coder), are coordinated via an orchestration framework (like LangGraph). This allows:
-  - Role specialization.
-  - Flexible routing and conditional logic.
-  - Better modularity and maintainability.
+- **Single-chain LLM:** Simple but not modular; expertise is blurred.
+- **Retrieval-Augmented Generation (RAG):** Adds grounding via documents but does not enforce specialization (math vs. code reasoning).
+- **Agentic / Multi-Agent Workflows:** Router + specialists coordinated via LangGraph, enabling role separation, conditional routing, and maintainable graphs.
 
 CourseGPT adopts the agentic design, leveraging LangGraph to finely control how queries move through different agents.
 
@@ -90,12 +83,12 @@ CourseGPT adopts the agentic design, leveraging LangGraph to finely control how 
   - A Python-based rapid prototyping framework for web apps.
   - Allows quick development of interactive UIs.
   - Well-suited for building chat-like interfaces and visualizing results without complex frontend code.
-  - Why chosen: Streamlit enables rapid UI prototyping with minimal frontend code, letting us build a usable chat interface quickly for demos and user testing without a separate frontend stack.
+  - Why chosen: Streamlit enables rapid UI prototyping with minimal frontend code, letting us build a usable chat interface quickly for demos and user testing without a separate frontend stack. A React/Next.js rewrite remains an option for long-term branding, but Streamlit keeps a single-language (Python) loop for research speed.
 
 - **EasyOCR & Document Parsing Libraries (OCR Pipeline):**
 
   - EasyOCR, pdf2image, Pillow, and python-docx were integrated to enable text extraction from uploaded PDFs, images, and scanned documents.
-  - Why chosen: EasyOCR provides a lightweight, locally runnable OCR engine that does not require cloud dependencies, making it well-suited for offline/secure academic environments. Combined with pdf2image and       python-docx, it allows the system to process handwritten notes, scanned exam papers, and screenshots expanding CourseGPT’s capabilities beyond plain text inputs.
+  - Why chosen: EasyOCR is lightweight and locally runnable (no cloud lock-in). Paired with pdf2image and python-docx, the pipeline handles handwritten notes, scanned exams, and screenshots—expanding CourseGPT beyond plain text inputs.
 
 ### 3.4 Cloudflare AI Search (AutoRAG) Integration
 
@@ -172,7 +165,7 @@ The intent classification leverages both heuristic patterns and LLM reasoning:
 Agentic workflow diagram
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/refs/heads/main/assets/graph.png" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
+  <img src="assets/graph.png" alt="LangGraph state machine" width="820" style="margin:8px;"/>
 </p>
 
 #### 4.2.3. Inter-Agent Communication: State Management
@@ -190,7 +183,7 @@ LangGraph maintains a **shared state** that can be passed across nodes:
 Architecture diagram
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/refs/heads/main/assets/agentic_architecture.png" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
+  <img src="assets/agentic_architecture.png" alt="CourseGPT multi-agent architecture" width="820" style="margin:8px;"/>
 </p>
 
 
@@ -220,18 +213,36 @@ Data handling focuses on how user queries and prompts are processed:
 ### 5.1.1. Router Agent
 
 **Role:**  
-Selects the appropriate specialized agent to handle an incoming request.
+Selects the appropriate specialized agent to handle an incoming request and emits a structured plan (tool order, rationale, optional metrics) that the graph follows.
 
 **Prompt Characteristics:**
 
-- Contains explicit classification instructions.
-- Must strictly route queries into one of: **MATH**, **PROGRAMMING**, or **GENERAL**.
-- Uses deterministic output formats (e.g., fixed labels or JSON).
+- Contains explicit classification instructions plus rationale and difficulty tags.
+- Strictly routes into **MATH**, **PROGRAMMING**, **GENERAL**, or combined flows (e.g., general→math→code) encoded in an ordered tool list.
+- Uses deterministic JSON-like output with length guards to avoid truncation.
 
 **Hyperparameters:**
 
-- **Temperature:** Low (0.0–0.2) for consistent routing.
-- **Max Tokens:** Small, as outputs are short.
+- **Temperature:** 0.0–0.2 for consistency.
+- **Max Tokens:** Small; length-ratio gate flags outputs >1.1× reference.
+- **LoRA/QLoRA:** Rank 16, alpha 32, dropout 0.05 on attention + MLP projections.
+- **Scheduler:** Cosine with 10% warmup; 2–3 epochs (beyond 3 overfits canonical routes).
+- **Learning rate:** Vertex auto-sweep (~0.7× base) for router; 2e-4 on local runs.
+
+**Data & bias notes (Milestones 2–5):**
+- 8,189 synthetic records (Gemini 2.5 Pro), schema-validated; difficulty: 67.5% advanced, 20% intermediate, 12.5% intro.
+- Canonical route `/general-search → /math → /code` dominates 93.2% of samples; math-first only 1.2%. Hard-negative sets (math-first, metrics-heavy) are used to counter bias.
+- Optional nested fields (~9%) are common schema-drop points; schema scorer enforces presence/order.
+
+**Models evaluated:**
+- `router-gemma3-peft` (best eval loss 0.608, PPL 1.837, ~53 samples/s).
+- `router-qwen3-32b-peft` (loss 0.628, PPL 1.873).
+- `router-llama31-peft` (loss 0.676, PPL 1.972).
+
+**Key metrics (hard benchmark n=120 + test n=409):**
+- Overall exact route: 93.2%; math-first improved from 40% → 58% after augmentation.
+- Tool precision/recall tracked per route; JSON truncation reduced 6.3% → 1.1% via length guards.
+- Throughput measured for CI gating; schema score blocks regressions when optional metrics keys drop.
 
 ---
 
@@ -252,24 +263,6 @@ The Math Agent solves mathematical problems with detailed, step-by-step reasonin
 - **Backbone:** `google/gemma-3-27b-it` (primary); alternatives tested include Qwen3-32B and Llama models.
 - **Training Dataset:** `XenArcAI/MathX-5M` — large-scale, step-wise math reasoning dataset.  
   Loaded in streaming/subset mode for efficiency.
-
-### Dataset Selection Rationale
-
-- **Large-Scale Chain-of-Thought Data:**  
-  MathX-5M provides millions of high-quality, step-by-step reasoning examples, which directly support the Math Agent's objective of generating structured, pedagogical explanations.
-
-- **Broad Curriculum Coverage:**  
-  The dataset spans basic arithmetic to advanced calculus, enabling the model to generalize across a wide range of mathematical topics and difficulty levels.
-
-- **Ideal for Instruction Tuning:**  
-  The high example count and consistent format make the dataset suitable for large-scale instruction fine-tuning without requiring heavy preprocessing or synthetic augmentation.
-
-- **Explicit Reasoning Traces:**  
-  Each example includes detailed chain-of-thought reasoning, helping the model learn not only the final answer but also the reasoning process—essential for step-wise solution generation.
-
-- **Improved Generalization:**  
-  The dataset’s diversity and structured solutions help the model develop stable problem-solving patterns, improving performance on both simple and complex queries.
-
 
 **Recommended LoRA Configuration**
 
@@ -346,21 +339,11 @@ Responds to conceptual, theoretical, analytical, and general academic or convers
 ### 5.1.5. OCR Integration
 
 
-Optical Character Recognition (OCR) service enables CourseGPT to understand and respond to questions about uploaded documents. Students often provide scanned PDFs, certificates, handwritten notes, textbook pages, or images containing text. These cannot be interpreted by an LLM unless the content is converted into machine-readable text.
+OCR makes CourseGPT document-aware. Students submit scanned PDFs, handwritten notes, or images that an LLM cannot read directly. We expose a POST `/ocr` FastAPI route backed by EasyOCR; `/chat` calls `_call_remote_ocr()` to process uploads, then falls back to PyPDF if OCR fails. The service:
 
-To address this, a standalone OCR microservice was added using EasyOCR and exposed through a new FastAPI route (POST /ocr). When a user uploads a PDF through the /chat endpoint, the backend performs the following steps:
-
-The PDF file is received in graph_call.py. The file bytes are sent to the OCR using _call_remote_ocr().
-The OCR service:
-
-- Detects text on each page
-- Extracts readable text
-- Computes a confidence score
-- Returns bounding-box metadata for each detected word
-
-If OCR fails, the system uses a fallback PDF parser (PyPDF).
-
-The extracted text is injected into the LangGraph pipeline as uploaded_file["text"], allowing the LLM to reason about the content.
+- Detects text per page, extracts text, returns bounding boxes, and logs a confidence score.
+- Injects extracted text into LangGraph as `uploaded_file["text"]` so agents can reason over it.
+- Flags pages with confidence <0.65; low-confidence pages are excluded from RAG unless the user opts in.
 
 **Why this was necessary:**
 Without OCR, students could not upload assignments, question papers, scanned problem statements, or study materials. This feature transforms CourseGPT into a document-aware assistant capable of answering:
@@ -377,15 +360,6 @@ Without OCR, students could not upload assignments, question papers, scanned pro
 **Impact**
 
 This enhancement significantly expands real-world usability by enabling CourseGPT to process non-text learning materials. The OCR service now acts as a preprocessing layer that converts uploaded documents into clean text, which is seamlessly integrated into the RAG + LangGraph workflow.
-
-**Limitations**
-
-- The quality of extracted text depends heavily on the quality of the uploaded document. 
-- Handwritten notes or low-resolution scans may produce inaccurate or incomplete text. 
-- OCR confidence values may vary widely across different fonts, languages, and layouts. 
-- Additionally, complex PDF structures (tables, multi-column text, or rotated pages) may not be perfectly reconstructed. 
-These limitations were partially mitigated through page-by-page processing and fallback PyPDF extraction, but complete accuracy cannot be guaranteed.
-
 
 ---
 
@@ -412,7 +386,7 @@ The LangGraph workflow is built as follows:
 
 ### 6.1. Testing Strategy
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/refs/heads/main/assets/agentic_evaluation.png?raw=true" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
+  <img src="assets/agentic_evaluation.png" alt="Agentic evaluation workflow" width="780" style="margin:8px;"/>
 </p>
 
 This project uses a two-stage evaluation and model selection strategy focused on objective, reproducible judgments of reasoning and correctness. Models are first trained (or adapted via LoRA) on supervised data and candidate checkpoints are produced during training. Instead of relying solely on human labels or single automatic metrics, we use an "LLM-as-a-judge" pipeline to efficiently and consistently evaluate candidate models at scale.
@@ -483,120 +457,62 @@ Limitations
 
 ### 6.3 Math Agent
 
-For testing and benchmarking the Math Agent, we used **OpenCompass's MathBench dataset**, which contains curated math questions across multiple difficulty levels (primary, middle, high school, and college). The dataset provides a balanced set of problems suitable for evaluating accuracy and reasoning across curricula.  
-For details, see: https://github.com/opencompass/MathBench
+For testing and benchmarking the Math Agent we used OpenCompass's MathBench dataset, which contains curated math questions across multiple difficulty levels (primary, middle, high school, and college). The dataset provides a balanced set of problems suitable for evaluating accuracy and reasoning across curricula — see https://github.com/open-compass/MathBench for details.
 
----
-
-### **Why MathBench Was Chosen**
-
-- **Curriculum-Spanning Coverage:**  
-  MathBench includes problems across multiple grade levels, enabling evaluation of generalization from simple arithmetic to advanced high-school and early-university concepts.
-
-- **Clear Difficulty Stratification:**  
-  Each subset is structured by difficulty tier, making it possible to evaluate performance progression and reasoning robustness across levels.
-
-- **Standardized Evaluation Format:**  
-  Questions follow well-defined formats, supporting consistent scoring for both final answers and reasoning quality.
-
-- **Widely Used in the Community:**  
-  MathBench is integrated into **OpenCompass**, ensuring reproducible evaluation slices, broader benchmark comparability, and alignment with community baselines.
-
-- **Balanced Dataset Design:**  
-  The curated nature of MathBench ensures high data quality and avoids noise that often appears in scraped or synthetic datasets.
-
----
-
-### **Model Comparison Plots**
+Below are representative comparison plots produced by the Math Agent evaluation tooling.
 
 <p align="center">
-  <img src="assets/compare.correct_by_model.png" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
+  <img src="assets/compare.correct_by_model.png" alt="Math Agent correctness by model" width="780" style="margin:8px;"/>
 </p>
 
 <p align="center">
-  <img src="assets/compare.mean_ratings_by_model.png" alt="Mean ratings by model" width="860" style="margin:8px;"/>
+  <img src="assets/compare.mean_ratings_by_model.png" alt="Mean ratings by model" width="780" style="margin:8px;"/>
 </p>
 
----
+Axes and sample info: y-axis = percent correct (0–100) or mean rubric score (0–10); x-axis = model family. Error bars show 95% bootstrap CIs on a 500-sample balanced MathBench subset (~125 items per tier).
 
-### **Conclusions from the Plots & Model Selection**
+**Conclusions from the plots & model selection**
 
-The comparison visuals (correct-answer percentage, mean ratings, and rating distribution boxplots) show a clear pattern:
+Gemma-based adapters deliver the best trade-off between accuracy, variance, and cost. Qwen3‑32B can edge Gemma on some metrics but with higher compute. Llama-family variants are serviceable yet less consistent. Recommendation: use Gemma LoRA as default; reserve Qwen3‑32B for high-resource evaluations.
 
-- **Gemma-3 LoRA adapters** deliver the best balance between accuracy, consistency, and compute efficiency.  
-  - High mean ratings  
-  - Lower variance  
-  - Competitive correct-answer rates  
-
-- **Qwen3-32B** performs strongly and sometimes slightly exceeds Gemma-3 on individual metrics, but requires significantly more compute and memory—making it a **premium, high-resource option**.
-
-- **Llama-family models** perform reasonably but show wider variance and lower mean ratings compared to Gemma/Qwen during evaluation.
-
-**Recommendation:**  
-Use **Gemma-based LoRA adapters** as the primary Math Agent for production due to their strong balance of performance and deployability. Reserve **Qwen3-32B** for high-resource environments or final-stage comparative evaluations.
-
----
-
-### **Judge Rubric (Used by the Automated LLM Judge)**
+Judge rubric (used by the automated LLM judge to score math outputs):
 
 ```python
 class Rubric(BaseModel):
-    correct_answer: bool
-    did_it_solve_in_easy_and_fast_approach: int
-    did_it_stop_midway: bool
-    easy_to_understand_explanation: int
-    notes: Optional[str] = None
+  correct_answer: bool
+  did_it_solve_in_easy_and_fast_approach: int
+  did_it_stop_midway: bool
+  easy_to_understand_explanation: int
+  notes: Optional[str] = None
 ```
 
 Note on the "did it stop midway" metric: we did not include a separate plot for this criterion in the comparison figures because, in our evaluation runs, both models consistently produced complete answers (no partial/stopped outputs), so the metric did not provide distinguishing information for these checkpoints.
 
 
 ### 6.4 Programming Agent
-This section presents the evaluation of the fine-tuned models for the Code Agent. 'nvidia/opencodereasoning' code dataset was used for testing.
+We evaluate code agents on an OpenCodeReasoning subset using an LLM-as-a-judge rubric (5 points total):
 
-Evaluation Criteria (Total: 5 points)
+- Correctness (0–2): solves the task, runs without errors, handles edge cases.
+- Clarity of reasoning (0–1)
+- Step-by-step logic (0–1)
+- Readability (0–1)
 
-Correctness (0-2 points)
+```python
+class CodeRubric(BaseModel):
+  correctness: float  # 0-2
+  clarity_of_reasoning: float  # 0-1
+  step_by_step_logic: float  # 0-1
+  readability: float  # 0-1
+  notes: Optional[str] = None
+```
 
-Does the code solve the given problem?
-
-Does it run without errors?
-
-Are edge cases handled appropriately?
-
-Clarity of Reasoning (0-1 point)
-
-Does the explanation (if provided) clearly describe the approach?
-
-Is the reasoning easy to follow?
-
-Step-by-Step Logic (0-1 point)
-
-Is the solution broken down into logical steps?
-
-Does the explanation reflect a coherent thought process?
-
-Readability (0-1 point)
-
-Is the code organized and well-formatted?
-
-Are variable names, comments, and structure clear?
-
-Output Format
-
-Score: Your rating
-
-Make sure you follow the output format. DON'T GIVE ANY OUTPUT OTHER THAT THAT. DON'T GIVE ANY REASONING.
-
-This prompt was passed with the generated code from the finetuned model to Ollama's gpt-oss:20b. It's job is to give rating to the code based on the above criteria. llama 3.17B was found to be the best performing model of all the finetuned models.
-
-
+Scoring is performed by `gpt-oss:20b` with enforced JSON output.
 
 **Key Findings:**
-- **Llama 3.1 8B** achieved the best overall performance with highest mean ratings and correctness scores
-- **Gemma 7B** showed competitive performance despite smaller size
-- **Qwen 0.6B** demonstrated remarkable efficiency given its compact size (~400MB)
-- All models benefited from training on the reasoning-focused `nvidia/opencodereasoning` dataset
+- **Llama 3.1 8B**: highest average rubric score (~4.3/5) and lowest runtime-error rate.
+- **Gemma 7B**: within 0.2 points of Llama while ~18% faster per sample.
+- **Qwen 0.6B**: best cost/latency profile; ~0.6 points behind the leader.
+- Reasoning tags in OpenCodeReasoning improve scores by ~0.4; removing them hurts chain quality.
 
 ---
 
@@ -690,7 +606,8 @@ This project successfully:
 - Built specialized agents for Math, Programming, and General queries.
 - Implemented a Router Agent to classify user intent and route queries appropriately.
 - Created a full-stack solution with a FastAPI backend and Streamlit frontend.
-- Evaluated the system and observed improved reliability and modularity compared to a single-prompt baseline.
+- Integrated RAG + OCR for document-aware answers with schema/rubric guardrails.
+- Evaluated the system with improved reliability and modularity compared to a single-prompt baseline.
 
 ### 8.2. Limitations
 
@@ -698,6 +615,8 @@ Despite its success, CourseGPT has several limitations:
 
 - **Limited Subject Coverage:** Currently focused on math, programming, and general queries; lacks dedicated agents for other disciplines.
 - **Context Window Constraints:** Long conversations may require summarization, and older context can be lost.
+- **Routing Bias:** Canonical-route bias can hurt rare math-first patterns unless balanced data are added.
+- **Cold Starts:** First-token latency (~6s) after idle periods unless warm-keep pings are enabled.
 - **Static Tools:** The current implementation may not fully exploit external tools (e.g., live web search, code execution in a secure sandbox).
 - **Model and Infrastructure Dependency:** Performance depends on the underlying LLM and available compute resources.
 
@@ -751,4 +670,3 @@ OpenCompass Team. *MathBench: A Comprehensive Benchmark for Mathematical Reasoni
 **Citation:**  
 NVIDIA AI Research. *OpenCodeReasoning: Code Reasoning and Code Understanding Dataset.* HuggingFace Dataset, 2024.  
 **URL:** https://huggingface.co/datasets/nvidia/OpenCodeReasoning
-
