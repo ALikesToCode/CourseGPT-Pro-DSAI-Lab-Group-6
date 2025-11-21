@@ -8,7 +8,9 @@ httpx>=0.26.0
 python-multipart>=0.0.9
 pytest>=8.0.0
 pypdf>=4.2.0
-ipython
-langchain-google-genai
+langchain-openai
+google-genai
+jinja2
+aiofiles
 requests-html
 lxml_html_clean

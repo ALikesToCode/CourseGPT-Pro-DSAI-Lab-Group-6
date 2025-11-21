@@ -1,6 +1,6 @@
 
 from langchain.messages import SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import ToolNode
 import requests
 from ..states.main_state import CourseGPTState

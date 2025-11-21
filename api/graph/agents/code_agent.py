@@ -1,5 +1,5 @@
 from langchain.messages import SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_google_genai import ChatGoogleGenerativeAI
 from ..states.main_state import CourseGPTState
 from api.tools.general_agent_handoff import general_agent_handoff
 from dotenv import load_dotenv
