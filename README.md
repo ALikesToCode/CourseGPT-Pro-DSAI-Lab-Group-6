@@ -92,6 +92,11 @@ CourseGPT adopts the agentic design, leveraging LangGraph to finely control how 
   - Well-suited for building chat-like interfaces and visualizing results without complex frontend code.
   - Why chosen: Streamlit enables rapid UI prototyping with minimal frontend code, letting us build a usable chat interface quickly for demos and user testing without a separate frontend stack.
 
+- **EasyOCR & Document Parsing Libraries (OCR Pipeline):**
+
+  - EasyOCR, pdf2image, Pillow, and python-docx were integrated to enable text extraction from uploaded PDFs, images, and scanned documents.
+  - Why chosen: EasyOCR provides a lightweight, locally runnable OCR engine that does not require cloud dependencies, making it well-suited for offline/secure academic environments. Combined with pdf2image and       python-docx, it allows the system to process handwritten notes, scanned exam papers, and screenshots—expanding CourseGPT’s capabilities beyond plain text inputs.
+
 ### 3.4 Cloudflare AI Search (AutoRAG) Integration
 
 - **What it provides:** Managed retrieval augmented generation (RAG) on top of Cloudflare R2 with automatic crawling/indexing (formerly AutoRAG). We use it to keep our study materials continuously searchable and feed context into the agents.
