@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+.venvinspect
+.pytest_cache
+**/__pycache__
+old
+data
+.vscode
+.cursor
+.claude
+*.log
+*.sqlite3
+.DS_Store
+api/graph/graph.png
