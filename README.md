@@ -473,8 +473,59 @@ Note on the "did it stop midway" metric: we did not include a separate plot for 
 
 
 ### 6.4 Programming Agent
+This section presents the evaluation of the fine-tuned models for the Code Agent. 'nvidia/opencodereasoning' code dataset was used for testing.
+
+Evaluation Criteria (Total: 5 points)
+
+Correctness (0-2 points)
+
+Does the code solve the given problem?
+
+Does it run without errors?
+
+Are edge cases handled appropriately?
+
+Clarity of Reasoning (0-1 point)
+
+Does the explanation (if provided) clearly describe the approach?
+
+Is the reasoning easy to follow?
+
+Step-by-Step Logic (0-1 point)
+
+Is the solution broken down into logical steps?
+
+Does the explanation reflect a coherent thought process?
+
+Readability (0-1 point)
+
+Is the code organized and well-formatted?
+
+Are variable names, comments, and structure clear?
+
+Output Format
+
+Score: Your rating
+
+Make sure you follow the output format. DON'T GIVE ANY OUTPUT OTHER THAT THAT. DON'T GIVE ANY REASONING.
+
+This prompt was passed with the generated code from the finetuned model to Ollama's gpt-oss:20b. It's job is to give rating to the code based on the above criteria. llama 3.17B was found to be the best performing model of all the finetuned models.
+
+**Evaluation Process Visualization:**
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/refs/heads/main/assets/agentic_evaluation.png?raw=true" alt="Code Agent Evaluation Workflow" width="860" style="margin:8px;"/>
+</p>
+
+*Figure 9.1: Automated evaluation workflow for Code Agent models using LLM-as-a-judge methodology with gpt-oss:20b as the evaluator.*
 
 
+
+**Key Findings:**
+- **Llama 3.1 8B** achieved the best overall performance with highest mean ratings and correctness scores
+- **Gemma 7B** showed competitive performance despite smaller size
+- **Qwen 0.6B** demonstrated remarkable efficiency given its compact size (~400MB)
+- All models benefited from training on the reasoning-focused `nvidia/opencodereasoning` dataset
 
 ---
 
