@@ -306,7 +306,15 @@ async def graph_ask(
                         if node_name in ["general_agent", "math_agent", "code_agent"]:
                             messages = update.get("messages", [])
                             if messages:
-                                last_msg = messages[-1]
+                                # Debug logging
+                                print(f"DEBUG: Node {node_name} returned messages type: {type(messages)}")
+                                
+                                if isinstance(messages, list):
+                                    last_msg = messages[-1]
+                                else:
+                                    # It's a single message object (e.g. AIMessage)
+                                    last_msg = messages
+
                                 content = ""
                                 if hasattr(last_msg, "content"):
                                     content = last_msg.content

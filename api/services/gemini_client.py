@@ -137,7 +137,13 @@ class Gemini3Client:
         # Set thinking level if using Gemini 3 Pro
         # Note: We apply this config to all models in the fallback chain if they are Gemini 3
         
-        models_to_try = [self.model] + self.fallback_models
+        # Deduplicate models while preserving order
+        models_to_try = []
+        seen_models = set()
+        for m in [self.model] + self.fallback_models:
+            if m not in seen_models:
+                models_to_try.append(m)
+                seen_models.add(m)
         last_exception = None
         response = None
 
