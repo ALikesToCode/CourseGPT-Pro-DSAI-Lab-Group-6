@@ -35,3 +35,4 @@ models/
 *validation.jsonl*
 *test.jsonl*
 *train.jsonl*
+.vercel
