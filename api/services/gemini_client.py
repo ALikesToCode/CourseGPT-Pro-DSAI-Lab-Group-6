@@ -33,9 +33,16 @@ class Gemini3Client:
                 creds_dict = json.loads(decoded)
             except (binascii.Error, json.JSONDecodeError) as exc:
                 raise ValueError("VERTEX_CREDENTIALS_JSON_B64 is not valid base64-encoded JSON") from exc
+            scopes = [
+                # Cloud Platform scope is required for most Vertex AI operations.
+                "https://www.googleapis.com/auth/cloud-platform",
+                # Generative Language scope is required when the SDK calls the public
+                # generativelanguage.googleapis.com API (prevents 403 scope errors).
+                "https://www.googleapis.com/auth/generative-language",
+            ]
             creds = service_account.Credentials.from_service_account_info(
                 creds_dict,
-                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                scopes=scopes,
             )
             self.client = genai.Client(
                 vertexai=True,
