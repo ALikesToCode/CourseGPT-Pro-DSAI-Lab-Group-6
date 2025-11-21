@@ -13,6 +13,58 @@
   <p style="font-size:15px; margin:4px 0 0 0;">Indian Institute of Technology Madras</p>
 </div>
 
+<div style="page-break-after: always;"></div>
+
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+## Index
+
+- [CourseGPT: DSAI Project Report (Team 6)](#coursegpt-dsai-project-report-team-6)
+  - [1. Abstract](#1-abstract)
+  - [2. Introduction](#2-introduction)
+    - [2.1. Project Overview](#21-project-overview)
+    - [2.2. Problem Statement](#22-problem-statement)
+    - [2.3. Objectives](#23-objectives)
+    - [2.4. Scope of the Project](#24-scope-of-the-project)
+  - [3. Literature Review (Milestone 1)](#3-literature-review-milestone-1)
+    - [3.1. Evolution of Educational Chatbots](#31-evolution-of-educational-chatbots)
+    - [3.2. Agentic Workflows vs. RAG](#32-agentic-workflows-vs-rag)
+    - [3.3. Review of Technologies](#33-review-of-technologies)
+    - [3.4 Cloudflare AI Search (AutoRAG) Integration](#34-cloudflare-ai-search-autorag-integration)
+  - [4. Dataset and Methodology (Milestones 2–3)](#4-dataset-and-methodology-milestones-23)
+    - [4.1. System Architecture](#41-system-architecture)
+    - [4.2. Agentic Workflow Design (The Methodology)](#42-agentic-workflow-design-the-methodology)
+    - [4.3. Data Handling](#43-data-handling)
+  - [5. Model Development and Hyperparameter Tuning (Milestone 4)](#5-model-development-and-hyperparameter-tuning-milestone-4)
+    - [5.1. The Agent Ecosystem (Model Configuration)](#51-the-agent-ecosystem-model-configuration)
+    - [5.1.1. Router Agent](#511-router-agent)
+    - [5.1.2. Math Agent](#512-math-agent)
+    - [5.1.3. Programming Agent](#513-programming-agent)
+    - [5.1.4. General Agent](#514-general-agent)
+    - [5.1.5. OCR Integration](#515-ocr-integration)
+    - [5.2. Building the Graph](#52-building-the-graph)
+  - [6. Evaluation & Analysis (Milestone 5)](#6-evaluation-analysis-milestone-5)
+    - [6.1. Testing Strategy](#61-testing-strategy)
+    - [6.2 Router Agent](#62-router-agent)
+    - [6.3 Math Agent](#63-math-agent)
+    - [6.4 Programming Agent](#64-programming-agent)
+    - [6.5 Ablation & End-to-End Testing](#65-ablation-end-to-end-testing)
+  - [7. Deployment & Documentation (Milestone 6)](#7-deployment-documentation-milestone-6)
+    - [7.1. Backend Infrastructure (FastAPI)](#71-backend-infrastructure-fastapi)
+    - [7.2. Frontend Implementation (Streamlit)](#72-frontend-implementation-streamlit)
+    - [7.3. Integration: Connecting Streamlit UI to FastAPI Backend](#73-integration-connecting-streamlit-ui-to-fastapi-backend)
+    - [7.4. User Manual / Usage Documentation](#74-user-manual-usage-documentation)
+    - [7.5 Security, Privacy, and Compliance](#75-security-privacy-and-compliance)
+  - [8. Conclusion and Future Work](#8-conclusion-and-future-work)
+    - [8.1. Summary of Achievements](#81-summary-of-achievements)
+    - [8.2. Limitations](#82-limitations)
+    - [8.3. Future Enhancements](#83-future-enhancements)
+  - [9. References and Appendix](#9-references-and-appendix)
+    - [Core References](#core-references)
+    - [Dataset & Benchmark References (Milestone 1 list)](#dataset-benchmark-references-milestone-1-list)
+    - [Agentic / Retrieval / Verification References (from Milestone 1)](#agentic-retrieval-verification-references-from-milestone-1)
+    - [Full Milestone-1 Bibliography (mirrored for completeness)](#full-milestone-1-bibliography-mirrored-for-completeness)
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # CourseGPT: DSAI Project Report (Team 6)
 
 ## 1. Abstract
@@ -60,7 +112,6 @@ The initial scope of CourseGPT is limited to three major categories of tasks:
 
 Out-of-scope for this iteration: discipline-specific agents (e.g., physics labs), full LMS integration, high-stakes exam generation, and unmanaged web browsing.
 
----
 
 ## 3. Literature Review (Milestone 1)
 
@@ -115,7 +166,6 @@ CourseGPT adopts the agentic design, leveraging LangGraph to finely control how 
 
 These technologies align well with the project’s needs: modular backend orchestration, fast API endpoints, and a simple interactive frontend.
 
----
 
 ## 4. Dataset and Methodology (Milestones 2–3)
 
@@ -213,13 +263,11 @@ Data handling focuses on how user queries and prompts are processed:
   - Long conversations are summarized when exceeding token limits.
   - This maintains LLM efficiency while preserving needed context.
 
----
 
 ## 5. Model Development and Hyperparameter Tuning (Milestone 4)
 
 ### 5.1. The Agent Ecosystem (Model Configuration)
 
----
 
 ### 5.1.1. Router Agent
 
@@ -268,7 +316,6 @@ Selects the appropriate specialized agent to handle an incoming request and emit
 | Metrics-heavy (optional fields)          | 16      | 78%                  | Schema scorer blocks drops of nested guidance   |
 | General-only                             | 10      | 92%                  | Stable, low variance                            |
 
----
 
 ### 5.1.2. Math Agent
 
@@ -322,7 +369,6 @@ The Math Agent solves mathematical problems with detailed, step-by-step reasonin
 - Larger backbones (Qwen3-32B, Gemma-27B) require careful memory optimization.
 - Correct final answers can hide flawed intermediate reasoning; multi-metric evaluation is important.
 
----
 
 ### 5.1.3. Programming Agent
 
@@ -340,7 +386,6 @@ Handles programming tasks such as code generation, debugging, documentation, and
 - **Temperature:** 0.0 for deterministic results.
 - **Max Tokens:** High enough to generate full code blocks and explanations.
 
----
 
 ### 5.1.4. General Agent
 
@@ -358,7 +403,6 @@ Responds to conceptual, theoretical, analytical, and general academic or convers
 - **Temperature:** ~0.7 for expressive but coherent output.
 - **Top-P:** Moderate to maintain fluency and topic alignment.
 
----
 
 ### 5.1.5. OCR Integration
 
@@ -383,7 +427,6 @@ Without OCR, students could not upload assignments, question papers, scanned pro
 
 This enhancement significantly expands real-world usability by enabling CourseGPT to process non-text learning materials. The OCR service now acts as a preprocessing layer that converts uploaded documents into clean text, which is seamlessly integrated into the RAG + LangGraph workflow.
 
----
 
 ### 5.2. Building the Graph
 
@@ -402,7 +445,6 @@ The LangGraph workflow is built as follows:
   - Once defined, it is compiled into an executable graph that can be invoked by the backend.
 - The compiled graph is then integrated into the FastAPI backend, which calls it asynchronously for each request.
 
----
 
 ## 6. Evaluation & Analysis (Milestone 5)
 
@@ -552,7 +594,6 @@ Scoring is performed by `gpt-oss:20b` with enforced JSON output.
 - **User testing:** 15 pilot users, scripted tasks (math proof, PDF Q&A, code debug): median latency 2.4s, P95 3.8s, clarity 4.5/5, 0% 5xx, 0.8% 4xx (files >25MB).
 - **Load test:** k6 (20 VUs, 5 minutes) on HF Spaces ZeroGPU: 99th percentile latency 4.1s, throughput 5.4 req/s.
 
----
 
 ## 7. Deployment & Documentation (Milestone 6)
 
@@ -636,7 +677,6 @@ The user documentation includes:
 - Compliance: recommend regional storage (APAC/EU) for residency; FERPA-like principles for student data.
 - Code execution: keep sandboxes locked down (resource caps, allowlisted modules) as per `verify_agents.py`.
 
----
 
 ## 8. Conclusion and Future Work
 
@@ -687,7 +727,6 @@ Potential future improvements include:
   - Track usage patterns for further tuning.
   - Provide instructors with anonymized aggregated insights (if integrated into learning platforms).
 
----
 
 ## 9. References and Appendix
 
