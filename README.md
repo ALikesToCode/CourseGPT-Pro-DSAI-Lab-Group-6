@@ -95,7 +95,7 @@ CourseGPT adopts the agentic design, leveraging LangGraph to finely control how 
 - **EasyOCR & Document Parsing Libraries (OCR Pipeline):**
 
   - EasyOCR, pdf2image, Pillow, and python-docx were integrated to enable text extraction from uploaded PDFs, images, and scanned documents.
-  - Why chosen: EasyOCR provides a lightweight, locally runnable OCR engine that does not require cloud dependencies, making it well-suited for offline/secure academic environments. Combined with pdf2image and       python-docx, it allows the system to process handwritten notes, scanned exam papers, and screenshots—expanding CourseGPT’s capabilities beyond plain text inputs.
+  - Why chosen: EasyOCR provides a lightweight, locally runnable OCR engine that does not require cloud dependencies, making it well-suited for offline/secure academic environments. Combined with pdf2image and       python-docx, it allows the system to process handwritten notes, scanned exam papers, and screenshots expanding CourseGPT’s capabilities beyond plain text inputs.
 
 ### 3.4 Cloudflare AI Search (AutoRAG) Integration
 
