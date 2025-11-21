@@ -66,6 +66,15 @@ class Settings:
 
         self.google_api_key = _env("GOOGLE_API_KEY", "GEMINI_API_KEY")
         self.gemini_model = _env("GEMINI_MODEL", default="gemini-3-pro-preview")
+        
+        self.gemini_fallback_models = []
+        i = 1
+        while True:
+            model = _env(f"GEMINI_MODEL_{i}")
+            if not model:
+                break
+            self.gemini_fallback_models.append(model)
+            i += 1
 
         # Basic validation for required settings so failures happen on startup rather than at runtime.
         # We make R2 optional to allow the API to start even if R2 is not configured.

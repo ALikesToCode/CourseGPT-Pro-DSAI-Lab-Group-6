@@ -10,9 +10,10 @@ class Gemini3Client:
     A wrapper for the Google Gen AI SDK (v1alpha/beta) to support Gemini 3 models
     in a way that is compatible with LangChain's invoke/bind_tools pattern.
     """
-    def __init__(self, api_key: str, model: str = "gemini-3-pro-preview"):
+    def __init__(self, api_key: str, model: str = "gemini-3-pro-preview", fallback_models: List[str] = None):
         self.client = genai.Client(api_key=api_key)
         self.model = model
+        self.fallback_models = fallback_models or []
         self.tools = []
         self.function_declarations: List[types.FunctionDeclaration] = []
         self.native_tools: List[str] = []
@@ -134,17 +135,37 @@ class Gemini3Client:
             config["tools"] = all_tools
 
         # Set thinking level if using Gemini 3 Pro
-        if "gemini-3" in self.model:
-            config["thinking_config"] = {"include_thoughts": True} 
+        # Note: We apply this config to all models in the fallback chain if they are Gemini 3
+        
+        models_to_try = [self.model] + self.fallback_models
+        last_exception = None
+        response = None
 
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                **config
-            )
-        )
+        for model_name in models_to_try:
+            try:
+                current_config = config.copy()
+                if "gemini-3" in model_name:
+                    current_config["thinking_config"] = {"include_thoughts": True}
+                
+                response = self.client.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        **current_config
+                    )
+                )
+                # If successful, break the loop
+                break
+            except Exception as e:
+                last_exception = e
+                print(f"Warning: Model {model_name} failed with error: {e}. Trying next model...")
+                continue
+        
+        if response is None:
+            if last_exception:
+                raise last_exception
+            raise RuntimeError("No response generated from any model.")
 
         # Convert response back to LangChain AIMessage
         content = response.text or ""

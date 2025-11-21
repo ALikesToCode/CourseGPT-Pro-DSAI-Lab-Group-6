@@ -1,4 +1,4 @@
-from IPython.display import Image, display
+# from IPython.display import Image, display
 from .should_goto_tools import should_goto_tools
 from .states.main_state import CourseGPTState
 from .agents.math_agent import math_agent, math_agent_tools
@@ -108,7 +108,4 @@ graph.add_edge('math_agent_tools', 'math_agent')
 graph = graph.compile()
 
 
-png_bytes = graph.get_graph().draw_mermaid_png()
-
-with open("graph.png", "wb") as f:
-    f.write(png_bytes)
+# Removed IPython import and graph visualization for production
