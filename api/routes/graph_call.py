@@ -283,6 +283,9 @@ async def graph_ask(
         }
 
         async def event_generator():
+            # Track how much content has already been streamed per node so we can
+            # emit incremental deltas instead of re-sending full messages.
+            streamed_lengths: Dict[str, int] = {}
             try:
                 # Stream updates from the graph
                 async for event in course_graph.astream(
@@ -322,7 +325,11 @@ async def graph_ask(
                                     content = last_msg.get("content") or ""
                                 
                                 if content:
-                                    yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+                                    prev_len = streamed_lengths.get(node_name, 0)
+                                    delta = content[prev_len:]
+                                    if delta:
+                                        yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
+                                        streamed_lengths[node_name] = prev_len + len(delta)
                 
                 # Signal end of stream
                 yield "data: [DONE]\n\n"

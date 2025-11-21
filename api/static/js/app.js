@@ -14,6 +14,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const docsList = document.getElementById('docs-list');
     const docsUploadBtn = document.getElementById('docs-upload-btn');
     const docsFileInput = document.getElementById('docs-file-input');
+    const docPreviewPanel = document.getElementById('doc-preview-panel');
+    const docPreviewFrame = document.getElementById('doc-preview-frame');
+    const docPreviewTitle = document.getElementById('doc-preview-title');
+    const docPreviewClose = document.getElementById('doc-preview-close');
 
     // --- Settings Elements ---
     const settingUserId = document.getElementById('setting-user-id');
@@ -335,6 +339,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+    if (docPreviewClose) {
+        docPreviewClose.addEventListener('click', () => {
+            if (docPreviewPanel) {
+                docPreviewPanel.classList.add('hidden');
+                if (docPreviewFrame) docPreviewFrame.src = '';
+            }
+        });
+    }
 
     async function loadDocuments() {
         try {
@@ -388,7 +400,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error('Unable to generate view link');
 
             const data = await response.json();
-            if (data.url) {
+            if (data.url && docPreviewPanel && docPreviewFrame) {
+                docPreviewFrame.src = data.url;
+                docPreviewPanel.classList.remove('hidden');
+                if (docPreviewTitle) {
+                    docPreviewTitle.textContent = key;
+                }
+                docPreviewPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else if (data.url) {
+                // Fallback: open in new tab if preview container missing
                 window.open(data.url, '_blank', 'noopener');
             }
         } catch (error) {
