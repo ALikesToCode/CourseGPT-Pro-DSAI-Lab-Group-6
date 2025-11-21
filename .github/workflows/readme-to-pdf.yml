@@ -1,0 +1,35 @@
+name: Build README PDF
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc wkhtmltopdf
+
+      - name: Build PDF from README
+        run: |
+          mkdir -p build
+          pandoc README.md \
+            --from markdown \
+            --to html5 \
+            --toc --toc-depth=3 \
+            --pdf-engine=wkhtmltopdf \
+            --output build/DSAI_Project_Report_Team6.pdf
+
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSAI_Project_Report_Team6
+          path: build/DSAI_Project_Report_Team6.pdf
+          if-no-files-found: error
