@@ -671,3 +671,21 @@ Potential future improvements include:
   - Retrieval-Augmented Generation (RAG).
 
 _(Replace with specific citation formats such as IEEE/APA as required by the institution.)_
+
+### Dataset References
+
+#### MathX-5M Dataset  
+**Citation:**  
+XenArcAI. *MathX-5M: Large-Scale Stepwise Math Reasoning Dataset.* GitHub Repository, 2024.  
+**URL:** https://github.com/XenArcAI/MathX-5M  
+
+#### MathBench (OpenCompass)  
+**Citation:**  
+OpenCompass Team. *MathBench: A Comprehensive Benchmark for Mathematical Reasoning Across Education Levels.* GitHub, 2023.  
+**URL:** https://github.com/opencompass/MathBench  
+
+#### NVIDIA OpenCodeReasoning Dataset  
+**Citation:**  
+NVIDIA AI Research. *OpenCodeReasoning: Code Reasoning and Code Understanding Dataset.* HuggingFace Dataset, 2024.  
+**URL:** https://huggingface.co/datasets/nvidia/OpenCodeReasoning
+
