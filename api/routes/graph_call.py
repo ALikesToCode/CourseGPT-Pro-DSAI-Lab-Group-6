@@ -50,7 +50,8 @@ def _extract_latest_message(messages):
 
 def _extract_router_debug(messages):
     """
-    Return the first handoff ToolMessage content for debugging the router output.
+    Return the first handoff tool call content for debugging the router output.
+    Handles both AIMessage (with tool_calls) and ToolMessage (with name).
     """
     import json
 
@@ -58,6 +59,13 @@ def _extract_router_debug(messages):
         return None
 
     for msg in messages:
+        # Case 1: AIMessage with tool_calls (from router_agent node)
+        if hasattr(msg, "tool_calls") and msg.tool_calls:
+            for tool_call in msg.tool_calls:
+                if tool_call.get("name", "").endswith("_handoff"):
+                    return {"tool": tool_call["name"], "content": tool_call["args"]}
+
+        # Case 2: ToolMessage (legacy/fallback)
         if hasattr(msg, "name") and isinstance(msg.name, str) and msg.name.endswith("_handoff"):
             payload = msg.content
             # Try to parse JSON payloads if content is a string representation
@@ -229,6 +237,9 @@ async def _fetch_rag_context(
     return contexts
 
 
+from fastapi.responses import StreamingResponse
+import json
+
 @router.post("/chat")
 async def graph_ask(
     prompt: str = Form(...),
@@ -238,12 +249,7 @@ async def graph_ask(
     ai_service: AISearchService = Depends(get_ai_search_service),
 ):
     """Accepts form-data (multipart) with an optional file upload.
-
-    Fields:
-    - `prompt`: the user prompt
-    - `thread_id`: thread identifier
-    - `user_id`: user identifier
-    - `file`: optional file uploaded with the request
+    Returns a StreamingResponse with SSE events.
     """
 
     try:
@@ -276,17 +282,49 @@ async def graph_ask(
             "configurable": config_payload
         }
 
-        # invoke the compiled state graph with a HumanMessage
-        result_state = course_graph.invoke(
-            {"messages": [HumanMessage(content=prompt)]},
-            config=config,
-        )
+        async def event_generator():
+            try:
+                # Stream updates from the graph
+                async for event in course_graph.astream(
+                    {"messages": [HumanMessage(content=prompt)]},
+                    config=config,
+                    stream_mode="updates"
+                ):
+                    # event is a dict {node_name: update}
+                    for node_name, update in event.items():
+                        # Handle Router Agent Handoffs
+                        if node_name == "router_agent":
+                            messages = update.get("messages", [])
+                            if messages:
+                                # Check for handoff tool calls
+                                debug_info = _extract_router_debug(messages)
+                                if debug_info:
+                                    yield f"data: {json.dumps({'type': 'handoff', 'content': debug_info})}\n\n"
+                        
+                        # Handle Agent Responses (Final Answer)
+                        # We assume the last message from a leaf agent is the answer
+                        if node_name in ["general_agent", "math_agent", "code_agent"]:
+                            messages = update.get("messages", [])
+                            if messages:
+                                last_msg = messages[-1]
+                                content = ""
+                                if hasattr(last_msg, "content"):
+                                    content = last_msg.content
+                                elif isinstance(last_msg, dict):
+                                    content = last_msg.get("content") or ""
+                                
+                                if content:
+                                    yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+                
+                # Signal end of stream
+                yield "data: [DONE]\n\n"
 
-        messages = _get_state_field(result_state, "messages")
-        latest_message = _extract_latest_message(messages)
-        router_debug = _extract_router_debug(messages)
+            except Exception as e:
+                logger.exception("Error during stream")
+                yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
-        return {"latest_message": latest_message, "router_debug": router_debug}
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001

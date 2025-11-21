@@ -3,6 +3,8 @@
 **pycache**/
 settings.json
 
+!.env.example
+
 # Ignore adapter artifacts and model weights
 adapters/
 **/adapters/

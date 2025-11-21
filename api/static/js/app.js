@@ -130,8 +130,9 @@ document.addEventListener('DOMContentLoaded', () => {
         userInput.style.height = 'auto';
         sendBtn.disabled = true;
 
-        // Show Loading
-        const loadingId = addLoadingMessage();
+        // Create placeholder for AI message
+        const aiMessageId = 'ai-msg-' + Date.now();
+        createAiMessagePlaceholder(aiMessageId);
 
         try {
             const formData = new FormData();
@@ -140,7 +141,6 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('user_id', userId);
             if (currentFile) {
                 formData.append('file', currentFile);
-                // Reset file after sending
                 currentFile = null;
                 fileUpload.value = '';
                 filePreview.classList.add('hidden');
@@ -151,84 +151,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: formData
             });
 
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
+            if (!response.ok) throw new Error('Network response was not ok');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let aiText = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.slice(6);
+                        if (dataStr === '[DONE]') break;
+
+                        try {
+                            const data = JSON.parse(dataStr);
+
+                            if (data.type === 'handoff') {
+                                renderHandoff(aiMessageId, data.content);
+                            } else if (data.type === 'token') {
+                                aiText += data.content; // In this case, content is the full message chunk from the node
+                                updateAiMessage(aiMessageId, aiText);
+                            } else if (data.type === 'error') {
+                                console.error('Stream error:', data.content);
+                                updateAiMessage(aiMessageId, aiText + '\n\n*Error: ' + data.content + '*');
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE:', e);
+                        }
+                    }
+                }
             }
-
-            const data = await response.json();
-
-            // Remove Loading
-            removeMessage(loadingId);
-
-            // Render AI Response
-            addMessage(data.latest_message, 'ai', data.router_debug);
 
         } catch (error) {
             console.error('Error:', error);
-            removeMessage(loadingId);
-            addMessage('Sorry, something went wrong. Please try again.', 'ai');
+            updateAiMessage(aiMessageId, 'Sorry, something went wrong. Please try again.');
         }
     }
 
-    function addMessage(text, sender, routerDebug = null) {
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', `${sender}-message`);
-
-        let contentHtml = '';
-
-        // Render Handoff Card if present
-        if (routerDebug && routerDebug.content) {
-            const content = routerDebug.content;
-            const handoffTarget = content.handoff || 'Specialized Agent';
-            const taskSummary = content.task_summary || '';
-            const rationale = content.route_rationale || '';
-
-            contentHtml += `
-                <div class="handoff-card">
-                    <div class="handoff-header">
-                        <i data-feather="shuffle"></i>
-                        <span>Handoff to ${handoffTarget.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
-                    </div>
-                    <div class="handoff-summary">${taskSummary}</div>
-                    <div class="handoff-rationale">Rationale: ${rationale}</div>
-                </div>
-            `;
-        }
-
-        // Render Main Text
-        if (text) {
-            const parsedText = marked.parse(text);
-            contentHtml += `<div class="message-content">${parsedText}</div>`;
-        }
-
-        messageDiv.innerHTML = contentHtml;
-        chatMessages.appendChild(messageDiv);
-
-        // Highlight code blocks
-        messageDiv.querySelectorAll('pre code').forEach((block) => {
-            hljs.highlightElement(block);
-        });
-
-        // Render LaTeX
-        renderMathInElement(messageDiv, {
-            delimiters: [
-                { left: '$$', right: '$$', display: true },
-                { left: '$', right: '$', display: false },
-                { left: '\\(', right: '\\)', display: false },
-                { left: '\\[', right: '\\]', display: true }
-            ],
-            throwOnError: false
-        });
-
-        // Re-initialize feather icons for new elements
-        feather.replace();
-
-        // Scroll to bottom
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-
-    function addLoadingMessage() {
-        const id = 'loading-' + Date.now();
+    function createAiMessagePlaceholder(id) {
         const messageDiv = document.createElement('div');
         messageDiv.id = id;
         messageDiv.classList.add('message', 'ai-message');
@@ -241,12 +207,70 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         chatMessages.appendChild(messageDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
-        return id;
     }
 
-    function removeMessage(id) {
-        const el = document.getElementById(id);
-        if (el) el.remove();
+    function renderHandoff(messageId, content) {
+        const messageDiv = document.getElementById(messageId);
+        if (!messageDiv) return;
+
+        const handoffTarget = content.handoff || 'Specialized Agent';
+        const taskSummary = content.task_summary || '';
+        const rationale = content.route_rationale || '';
+
+        const handoffHtml = `
+            <div class="handoff-card">
+                <div class="handoff-header">
+                    <i data-feather="shuffle"></i>
+                    <span>Handoff to ${handoffTarget.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                </div>
+                <div class="handoff-summary">${taskSummary}</div>
+                <div class="handoff-rationale">Rationale: ${rationale}</div>
+            </div>
+        `;
+
+        // Insert before the message content
+        const contentDiv = messageDiv.querySelector('.message-content');
+        contentDiv.insertAdjacentHTML('beforebegin', handoffHtml);
+        feather.replace();
+    }
+
+    function updateAiMessage(id, text) {
+        const messageDiv = document.getElementById(id);
+        if (!messageDiv) return;
+
+        const contentDiv = messageDiv.querySelector('.message-content');
+
+        // Parse Markdown and LaTeX
+        contentDiv.innerHTML = marked.parse(text);
+
+        // Highlight code
+        contentDiv.querySelectorAll('pre code').forEach((block) => {
+            hljs.highlightElement(block);
+        });
+
+        // Render LaTeX
+        renderMathInElement(contentDiv, {
+            delimiters: [
+                { left: '$$', right: '$$', display: true },
+                { left: '$', right: '$', display: false },
+                { left: '\\(', right: '\\)', display: false },
+                { left: '\\[', right: '\\]', display: true }
+            ],
+            throwOnError: false
+        });
+
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Deprecated: addMessage (kept for simple user messages)
+    function addMessage(text, sender) {
+        if (sender === 'ai') return; // AI messages handled by streaming
+
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', `${sender}-message`);
+        messageDiv.innerHTML = `<div class="message-content">${marked.parse(text)}</div>`;
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
     // --- Documents Logic ---
