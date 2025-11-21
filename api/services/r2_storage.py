@@ -38,10 +38,12 @@ class R2StorageService:
 
         self.bucket = settings.cloudflare_r2_bucket
         self.endpoint = settings.cloudflare_r2_endpoint.rstrip("/")
+        self.region = settings.cloudflare_r2_region or "auto"
 
         self._client = boto3.client(
             "s3",
             endpoint_url=self.endpoint,
+            region_name=self.region,
             aws_access_key_id=settings.cloudflare_access_key,
             aws_secret_access_key=settings.cloudflare_secret_access_key,
             config=Config(signature_version="s3v4"),
@@ -84,7 +86,7 @@ class R2StorageService:
         try:
             response = self._client.list_objects_v2(**params)
         except (ClientError, BotoCoreError) as exc:
-            logger.exception("Failed to list objects from R2")
+            logger.exception("Failed to list objects from R2 (region=%s, endpoint=%s)", self.region, self.endpoint)
             raise RuntimeError("Unable to list files from Cloudflare R2") from exc
 
         contents = response.get("Contents", []) or []

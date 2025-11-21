@@ -45,6 +45,9 @@ class Settings:
         )
         self.cloudflare_r2_bucket = _env("CLOUDFLARE_R2_BUCKET_NAME", "CLOUDFLARE-R2-BUCKET-NAME")
         self.cloudflare_r2_endpoint = _env("CLOUDFLARE_R2_ENDPOINT", "CLOUDFLARE-R2-ENDPOINT")
+        # Cloudflare uses non-AWS region names (e.g., auto, wnam, apac). Default to "auto" to avoid
+        # inheriting AWS_REGION/DEFAULT_REGION values like "ap-south-1" that will be rejected by R2.
+        self.cloudflare_r2_region = _env("CLOUDFLARE_R2_REGION", default="auto")
         self.cloudflare_r2_token = _env("CLOUDFLARE_R2_TOKEN", "CLOUDFLARE-R2-TOKEN")
 
         # Agent Configuration
