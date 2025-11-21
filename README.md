@@ -522,14 +522,6 @@ Make sure you follow the output format. DON'T GIVE ANY OUTPUT OTHER THAT THAT. D
 
 This prompt was passed with the generated code from the finetuned model to Ollama's gpt-oss:20b. It's job is to give rating to the code based on the above criteria. llama 3.17B was found to be the best performing model of all the finetuned models.
 
-**Evaluation Process Visualization:**
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/ALikesToCode/CourseGPT-Pro-DSAI-Lab-Group-6/refs/heads/main/assets/agentic_evaluation.png?raw=true" alt="Code Agent Evaluation Workflow" width="860" style="margin:8px;"/>
-</p>
-
-*Figure 9.1: Automated evaluation workflow for Code Agent models using LLM-as-a-judge methodology with gpt-oss:20b as the evaluator.*
-
 
 
 **Key Findings:**
