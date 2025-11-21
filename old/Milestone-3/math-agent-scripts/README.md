@@ -1,4 +1,4 @@
-# Math Agent Architecture - Gemma-3-4B Fine-Tuning
+# Math Agent Architecture - Gemma-3-27B Fine-Tuning
 
 ## 📋 Executive Summary
 
@@ -6,13 +6,13 @@ This document presents the architecture and design decisions for the **Math Agen
 
 ## 🎯 Architecture Overview
 
-### Selected Architecture: **Gemma-3-4B with LoRA Fine-Tuning**
+### Selected Architecture: **Gemma-3-27B with LoRA Fine-Tuning**
 
 Our math agent leverages Google's Gemma-3-4B-IT model fine-tuned on the MathX-5M dataset using Low-Rank Adaptation (LoRA). This architecture was chosen after careful evaluation of multiple alternatives based on performance, resource efficiency, and educational applicability.
 
 ### Core Components
 
-1. **Base Model**: `google/gemma-3-4b-it` (4 billion parameter instruction-tuned model)
+1. **Base Model**: `google/gemma-3-27b-it` (27 billion parameter instruction-tuned model)
 2. **Training Dataset**: `XenArcAI/MathX-5M` (~4.32M mathematical problems with solutions)
 3. **Fine-Tuning Method**: LoRA (Low-Rank Adaptation) for parameter-efficient training
 4. **Optimization**: Mixed precision training (BF16/FP16) with gradient checkpointing
@@ -21,7 +21,7 @@ Our math agent leverages Google's Gemma-3-4B-IT model fine-tuned on the MathX-5M
 
 | Component              | Configuration              | Justification                                        |
 | ---------------------- | -------------------------- | ---------------------------------------------------- |
-| **Model Size**         | 4B parameters              | Optimal balance between capability and deployability |
+| **Model Size**         | 27B parameters             | High-capacity model chosen for superior reasoning depth |
 | **Fine-Tuning Method** | LoRA (Low-Rank Adaptation) | Parameter-efficient; only 0.5% of weights trained    |
 | **LoRA Rank**          | r=16, α=32                 | Sufficient expressiveness for math reasoning tasks   |
 | **Target Modules**     | All attention & FFN layers | Comprehensive adaptation across model architecture   |
@@ -30,7 +30,7 @@ Our math agent leverages Google's Gemma-3-4B-IT model fine-tuned on the MathX-5M
 
 ## 🏗️ Architecture Justification
 
-### 1. Why Gemma-3-4B Over Alternatives?
+### 1. Why Gemma-3-27B Over Alternatives?
 
 #### **Evaluated Alternatives:**
 
@@ -41,7 +41,7 @@ Our math agent leverages Google's Gemma-3-4B-IT model fine-tuned on the MathX-5M
 | **Mistral-7B**   | 7B    | Good generalization                     | Less optimized for instruction following   | ❌ Suboptimal instruction adherence       |
 | **Phi-3-Mini**   | 3.8B  | Efficient, fast                         | Limited mathematical reasoning depth       | ❌ Insufficient for complex math problems |
 | **Gemma-2-2B**   | 2B    | Very lightweight                        | Reduced capability on multi-step reasoning | ❌ Too small for educational requirements |
-| **Gemma-3-4B**   | 4B    | ✅ **Balanced performance & efficiency** | Newer model, less community adoption       | ✅ **SELECTED** - Optimal trade-off       |
+| **Gemma-3-27B**   | 27B   | ✅ **High reasoning capacity & instruction-following** | Larger resource requirements | ✅ **SELECTED** — best performance trade-off |
 
 #### **Selection Rationale:**
 
@@ -97,6 +97,8 @@ Our math agent leverages Google's Gemma-3-4B-IT model fine-tuned on the MathX-5M
 ✅ **LaTeX Support**: Mathematical notation properly formatted for academic standards  
 
 ### 4. LoRA Configuration Justification
+
+**Adapters / Fine-tuned Backbones:** LoRA adapters and evaluation checkpoints were produced for multiple backbones to compare trade-offs and deployment options: `Gemma-3-27B`, `Qwen3-32B`, and `Llama4-17n`.
 
 #### **Target Modules Selection**
 
@@ -190,7 +192,7 @@ messages = [
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     2. MODEL INITIALIZATION LAYER                    │
 ├─────────────────────────────────────────────────────────────────────┤
-│  • Load Gemma-3-4B-IT base model                                    │
+│  • Load Gemma-3-27B-IT base model                                   │
 │  • Apply 4-bit NF4 quantization (75% memory reduction)              │
 │  • Enable gradient checkpointing (40% additional savings)           │
 │  • Prepare for k-bit training (PEFT integration)                    │
@@ -235,7 +237,7 @@ messages = [
                                                    │
                                                    ▼
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│    Merged    │◀────│     LoRA     │◀────│  Gemma-3-4B  │
+│    Merged    │◀────│     LoRA     │◀────│  Gemma-3-27B │
 │    Model     │     │   Adapters   │     │ (Quantized)  │
 └──────────────┘     └──────────────┘     └──────────────┘
        │                                           ▲
@@ -253,7 +255,7 @@ messages = [
 
 | Decision Point         | Selected Option           | Key Rationale                                                |
 | ---------------------- | ------------------------- | ------------------------------------------------------------ |
-| **Base Model**         | Gemma-3-4B-IT             | Optimal performance/efficiency; strong instruction following |
+| **Base Model**         | Gemma-3-27B-IT            | Optimal performance for complex math reasoning |
 | **Training Method**    | LoRA                      | 99.5% parameter reduction; efficient fine-tuning             |
 | **Dataset**            | MathX-5M                  | Largest scale; step-by-step reasoning format                 |
 | **LoRA Configuration** | r=16, α=32, 7 modules     | Comprehensive adaptation; proven for reasoning tasks         |
@@ -285,7 +287,7 @@ os.environ["HF_TOKEN"] = "your_token_here"
 
 ### Training Execution
 
-Run cells sequentially in `math_agent_architecture_gemma_3_4b.ipynb`:
+Run cells sequentially in `math_agent_architecture_gemma_3_27b.ipynb`:
 1. Install dependencies
 2. Load & explore dataset
 3. Configure model & training
@@ -294,8 +296,8 @@ Run cells sequentially in `math_agent_architecture_gemma_3_4b.ipynb`:
 
 ### Expected Outputs
 
-- **LoRA Adapters**: `./gemma3-4b-math-lora-adapter/final_adapter/` (~50MB)
-- **Merged Model**: `./gemma3-4b-math-merged/` (~4GB, optional)
+- **LoRA Adapters**: `./gemma3-27b-math-lora-adapter/final_adapter/` (~50MB per-adapter)
+- **Merged Model**: `./gemma3-27b-math-merged/` (optional merged checkpoint)
 - **Training Logs**: Console output with loss, steps, time
 
 ## 📚 References & Related Work
