@@ -378,6 +378,15 @@ Without OCR, students could not upload assignments, question papers, scanned pro
 
 This enhancement significantly expands real-world usability by enabling CourseGPT to process non-text learning materials. The OCR service now acts as a preprocessing layer that converts uploaded documents into clean text, which is seamlessly integrated into the RAG + LangGraph workflow.
 
+**Limitations**
+
+- The quality of extracted text depends heavily on the quality of the uploaded document. 
+- Handwritten notes or low-resolution scans may produce inaccurate or incomplete text. 
+- OCR confidence values may vary widely across different fonts, languages, and layouts. 
+- Additionally, complex PDF structures (tables, multi-column text, or rotated pages) may not be perfectly reconstructed. 
+These limitations were partially mitigated through page-by-page processing and fallback PyPDF extraction, but complete accuracy cannot be guaranteed.
+
+
 ---
 
 ### 5.2. Building the Graph
