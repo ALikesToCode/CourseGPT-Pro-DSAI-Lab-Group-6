@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 # Ensure repository root is on sys.path so `api.*` imports resolve when running from /api
 repo_root = Path(__file__).resolve().parent.parent
@@ -18,7 +20,15 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(files_router)
 app.include_router(ai_search_router)
-app.include_router(graph_call.router)
+app.include_router(graph_call.router, prefix="/graph")
+
+app.mount("/static", StaticFiles(directory=repo_root / "api" / "static"), name="static")
+templates = Jinja2Templates(directory=repo_root / "api" / "templates")
+
+
+@app.get("/")
+async def get_chat_ui(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 if __name__ == "__main__":

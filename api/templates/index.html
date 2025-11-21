@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CourseGPT Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- Feather Icons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar (Optional/Future use) -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo-icon">
+                    <i data-feather="hexagon"></i>
+                </div>
+                <h1>CourseGPT</h1>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-view="chat-view">
+                    <i data-feather="message-square"></i>
+                    <span>Chat</span>
+                </a>
+                <a href="#" class="nav-item" data-view="docs-view">
+                    <i data-feather="file-text"></i>
+                    <span>Documents</span>
+                </a>
+                <a href="#" class="nav-item" data-view="settings-view">
+                    <i data-feather="settings"></i>
+                    <span>Settings</span>
+                </a>
+            </nav>
+            <div class="user-profile">
+                <div class="avatar">U</div>
+                <div class="user-info">
+                    <span class="name">Student</span>
+                    <span class="status">Online</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main id="chat-view" class="view-section active">
+            <header class="chat-header">
+                <div class="header-info">
+                    <h2>CourseGPT Assistant</h2>
+                    <span class="status-badge">
+                        <span class="dot"></span>
+                        Ready to help
+                    </span>
+                </div>
+                <div class="header-actions">
+                    <button class="icon-btn" title="Clear Chat" id="clear-chat-btn">
+                        <i data-feather="trash-2"></i>
+                    </button>
+                </div>
+            </header>
+
+            <div class="chat-messages" id="chat-messages">
+                <!-- Welcome Message -->
+                <div class="message ai-message">
+                    <div class="message-content">
+                        <p>👋 Hello! I'm CourseGPT. I can help you with your course materials, solve math problems, or
+                            analyze documents. How can I assist you today?</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <div class="input-container">
+                    <div class="file-upload-wrapper">
+                        <input type="file" id="file-upload" accept=".pdf" hidden>
+                        <button class="icon-btn" id="upload-btn" title="Upload PDF">
+                            <i data-feather="paperclip"></i>
+                        </button>
+                        <div id="file-preview" class="file-preview hidden">
+                            <span id="file-name"></span>
+                            <button id="remove-file" class="close-btn">&times;</button>
+                        </div>
+                    </div>
+                    <textarea id="user-input" placeholder="Type a message..." rows="1"></textarea>
+                    <button id="send-btn" class="send-btn" disabled>
+                        <i data-feather="send"></i>
+                    </button>
+                </div>
+                <div class="input-footer">
+                    <span>Enter to send, Shift + Enter for new line</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- Documents View -->
+        <main id="docs-view" class="view-section hidden">
+            <header class="view-header">
+                <h2>Documents</h2>
+                <p>Manage your uploaded study materials.</p>
+            </header>
+            <div class="view-content">
+                <div class="docs-toolbar">
+                    <button class="btn-primary" id="docs-upload-btn">
+                        <i data-feather="upload"></i> Upload Document
+                    </button>
+                    <input type="file" id="docs-file-input" accept=".pdf" hidden>
+                </div>
+                <div class="docs-list" id="docs-list">
+                    <!-- Documents will be loaded here -->
+                    <div class="empty-state">
+                        <i data-feather="file-text"></i>
+                        <p>No documents yet. Upload one to get started.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Settings View -->
+        <main id="settings-view" class="view-section hidden">
+            <header class="view-header">
+                <h2>Settings</h2>
+                <p>Configure your CourseGPT experience.</p>
+            </header>
+            <div class="view-content">
+                <div class="settings-card">
+                    <h3>General</h3>
+                    <div class="form-group">
+                        <label>User ID</label>
+                        <input type="text" id="setting-user-id" readonly>
+                        <small>Unique identifier for this session.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Thread ID</label>
+                        <input type="text" id="setting-thread-id" readonly>
+                        <small>Conversation thread identifier.</small>
+                    </div>
+                    <div class="form-group">
+                        <button class="btn-secondary" id="reset-session-btn">Reset Session</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script>
+        feather.replace();
+    </script>
+</body>
+
+</html>
