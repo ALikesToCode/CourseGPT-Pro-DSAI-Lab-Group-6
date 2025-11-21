@@ -641,32 +641,69 @@ Potential future improvements include:
 
 ## 9. References and Appendix
 
-### References
+### Core References
 
-- LangChain Documentation – LLM Orchestration and Tools.  
-- LangGraph Documentation – Graph-based Agent Workflows.  
-- FastAPI Documentation – Modern, Fast (High-Performance) Web Framework for Building APIs with Python.  
-- Streamlit Documentation – The fastest way to build data apps in Python.  
-- Research papers and articles on:
-  - LLM-based tutoring systems.
-  - Agentic AI workflows.
-  - Retrieval-Augmented Generation (RAG).
+1. Zhao et al. — taxonomy of RAG architectures and coordination trade-offs. https://arxiv.org/html/2506.00054v1  
+2. Gao et al. — survey of augmentation methods, benchmarks, and open problems. https://arxiv.org/abs/2402.19473  
+3. NVIDIA NIM tutorial — multimodal ingestion and reranking workflow. https://developer.nvidia.com/blog/build-an-enterprise-scale-multimodal-document-retrieval-pipeline-with-nvidia-nim-agent-blueprint/  
+4. Weaviate hybrid search guide. https://weaviate.io/blog/hybrid-search-explained  
+5. Pinecone hybrid search guide. https://docs.pinecone.io/guides/search/hybrid-search  
+6. Multimodal RAG overview. https://www.usaii.org/ai-insights/multimodal-rag-explained-from-text-to-images-and-beyond  
+7. LayoutLMv3 (text/layout/vision pretrain). https://arxiv.org/pdf/2204.08387.pdf  
+8. Donut (OCR-free parsing). https://arxiv.org/abs/2111.15664  
+9. Toolformer (self-supervised API use). https://arxiv.org/pdf/2302.04761.pdf  
+10. ReAct (reason + act prompting). https://arxiv.org/abs/2210.03629  
+11. AGREE + G3 grounding methods. https://research.google/blog/effective-large-language-model-adaptation-for-improved-grounding/  
+12. QLoRA (efficient fine-tuning). https://arxiv.org/pdf/2305.14314.pdf  
+13. LoRA adapters (Hu et al.). https://arxiv.org/pdf/2106.09685.pdf  
+14. HydraLoRA / adapter variants. https://ieeexplore.ieee.org/document/10903789/  
+15. DistilDP (DP synthetic data). https://aclanthology.org/2024.findings-acl.769.pdf  
+16. Frontier-to-open distillation. https://arxiv.org/abs/2410.18588  
+17. Chain-of-thought prompting primer. https://www.nvidia.com/en-us/glossary/cot-prompting/  
+18. Program-of-thought reasoning. https://arxiv.org/pdf/2309.11054.pdf  
+19. Plan-first/Pre-Act tool planning. https://arxiv.org/abs/2505.09970  
+20. Router/orchestration patterns. https://ijcionline.com/paper/13/13624ijci02.pdf  
+21. DAAO / HALO workflow tuning. https://arxiv.org/abs/2505.13516  
+22. Vector DB comparisons (Milvus vs Qdrant). https://www.f22labs.com/blogs/qdrant-vs-milvus-which-vector-database-should-you-choose/  
+23. Qdrant vs FAISS. https://zilliz.com/comparison/qdrant-vs-faiss  
+24. Secure code execution guidance. https://dida.do/blog/setting-up-a-secure-python-sandbox-for-llm-agents  
+25. LangGraph documentation. https://github.com/langchain-ai/langgraph  
+26. LangChain documentation. https://python.langchain.com/  
+27. FastAPI documentation. https://fastapi.tiangolo.com/  
+28. Streamlit documentation. https://docs.streamlit.io/  
+29. vLLM serving. https://github.com/vllm-project/vllm  
+30. PEFT library. https://github.com/huggingface/peft  
+31. Transformers library. https://github.com/huggingface/transformers  
 
-_(Replace with specific citation formats such as IEEE/APA as required by the institution.)_
+### Dataset & Benchmark References (Milestone 1 list)
 
-### Dataset References
+- MathX-5M (MIT). https://huggingface.co/datasets/XenArcAI/MathX-5M  
+- DAPO-Math-17k (Apache-2.0). https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k  
+- MathVista (CC BY-SA 4.0). https://huggingface.co/datasets/AI4Math/MathVista  
+- ScienceQA (CC BY-SA 4.0). https://huggingface.co/datasets/armanc/ScienceQA  
+- MathBench / OpenCompass. https://github.com/opencompass/MathBench  
+- NVIDIA OpenCodeReasoning (Apache 2.0). https://huggingface.co/datasets/nvidia/OpenCodeReasoning  
+- JEE-NEET benchmark (MIT). https://huggingface.co/datasets/Reja1/jee-neet-benchmark  
+- JEEBench (MIT). https://huggingface.co/datasets/daman1209arora/jeebench  
+- GSM8K / GSM1K. https://github.com/openai/grade-school-math  
+- MathScale / MwpBench. https://arxiv.org/abs/2403.02884  
+- DotaMath / MuMath-Code (code-assisted math). https://arxiv.org/abs/2407.04078  
+- CMM-Math (vision-text math). http://arxiv.org/pdf/2405.07551.pdf  
+- CoF / LongCite grounding datasets. https://arxiv.org/pdf/2409.02897.pdf  
+- MathX-5M, MathBench, MathVista, DAPO-Math-17k, ScienceQA are used for training/eval planning.
 
-#### MathX-5M Dataset  
-**Citation:**  
-XenArcAI. *MathX-5M: Large-Scale Stepwise Math Reasoning Dataset.* GitHub Repository, 2024.  
-**URL:** https://github.com/XenArcAI/MathX-5M  
+### Agentic / Retrieval / Verification References (from Milestone 1)
 
-#### MathBench (OpenCompass)  
-**Citation:**  
-OpenCompass Team. *MathBench: A Comprehensive Benchmark for Mathematical Reasoning Across Education Levels.* GitHub, 2023.  
-**URL:** https://github.com/opencompass/MathBench  
+- Toolformer follow-ups (Adaptive Tool Generation, Pre-Act). https://www.semanticscholar.org/paper/99832586d55f540f603637e458a292406a0ed75d  
+- IMR-TIP multi-model judge. https://aclanthology.org/2024.nlrse-1.7.pdf  
+- NILE explanation-sensitive verification. https://www.aclweb.org/anthology/2020.acl-main.771  
+- G3 quote extraction. https://aclanthology.org/2024.naacl-long.346/  
+- AGREE citation adaptation. https://aclanthology.org/2024.findings-acl.838.pdf  
+- LongCite / CoF long-context citation. https://aclanthology.org/2025.findings-acl.264.pdf  
+- Secure sandboxes for LLM code. https://www.moveworks.com/us/en/resources/blog/secure-code-execution-for-llms  
+- LangChain symbolic math chain. https://api.python.langchain.com/en/latest/llm_symbolic_math/langchain_experimental.llm_symbolic_math.base.LLMSymbolicMathChain.html  
+- OCR-free stacks (TextMonkey, PDF-WuKong). https://arxiv.org/abs/2410.05970  
+- Hybrid retrieval fusion and reranking (RR Fusion). https://docs.pinecone.io/guides/search/hybrid-search  
+- RAG evaluation metrics (faithfulness/precision/recall). https://www.elastic.co/search-labs/blog/evaluating-rag-metrics  
 
-#### NVIDIA OpenCodeReasoning Dataset  
-**Citation:**  
-NVIDIA AI Research. *OpenCodeReasoning: Code Reasoning and Code Understanding Dataset.* HuggingFace Dataset, 2024.  
-**URL:** https://huggingface.co/datasets/nvidia/OpenCodeReasoning
+_Full numbered bibliography (1–146) is preserved in `old/Milestone-1/Project-Proposal.md`; the list above surfaces the same sources for quick reference._
