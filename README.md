@@ -253,6 +253,24 @@ The Math Agent solves mathematical problems with detailed, step-by-step reasonin
 - **Training Dataset:** `XenArcAI/MathX-5M` — large-scale, step-wise math reasoning dataset.  
   Loaded in streaming/subset mode for efficiency.
 
+### Dataset Selection Rationale
+
+- **Large-Scale Chain-of-Thought Data:**  
+  MathX-5M provides millions of high-quality, step-by-step reasoning examples, which directly support the Math Agent's objective of generating structured, pedagogical explanations.
+
+- **Broad Curriculum Coverage:**  
+  The dataset spans basic arithmetic to advanced calculus, enabling the model to generalize across a wide range of mathematical topics and difficulty levels.
+
+- **Ideal for Instruction Tuning:**  
+  The high example count and consistent format make the dataset suitable for large-scale instruction fine-tuning without requiring heavy preprocessing or synthetic augmentation.
+
+- **Explicit Reasoning Traces:**  
+  Each example includes detailed chain-of-thought reasoning, helping the model learn not only the final answer but also the reasoning process—essential for step-wise solution generation.
+
+- **Improved Generalization:**  
+  The dataset’s diversity and structured solutions help the model develop stable problem-solving patterns, improving performance on both simple and complex queries.
+
+
 **Recommended LoRA Configuration**
 
 - **Rank:** `r = 16`
@@ -456,9 +474,31 @@ Limitations
 
 ### 6.3 Math Agent
 
-For testing and benchmarking the Math Agent we used OpenCompass's MathBench dataset, which contains curated math questions across multiple difficulty levels (primary, middle, high school, and college). The dataset provides a balanced set of problems suitable for evaluating accuracy and reasoning across curricula — see https://github.com/open-compass/MathBench for details.
+For testing and benchmarking the Math Agent, we used **OpenCompass's MathBench dataset**, which contains curated math questions across multiple difficulty levels (primary, middle, high school, and college). The dataset provides a balanced set of problems suitable for evaluating accuracy and reasoning across curricula.  
+For details, see: https://github.com/opencompass/MathBench
 
-Below are representative comparison plots produced by the Math Agent evaluation tooling.
+---
+
+### **Why MathBench Was Chosen**
+
+- **Curriculum-Spanning Coverage:**  
+  MathBench includes problems across multiple grade levels, enabling evaluation of generalization from simple arithmetic to advanced high-school and early-university concepts.
+
+- **Clear Difficulty Stratification:**  
+  Each subset is structured by difficulty tier, making it possible to evaluate performance progression and reasoning robustness across levels.
+
+- **Standardized Evaluation Format:**  
+  Questions follow well-defined formats, supporting consistent scoring for both final answers and reasoning quality.
+
+- **Widely Used in the Community:**  
+  MathBench is integrated into **OpenCompass**, ensuring reproducible evaluation slices, broader benchmark comparability, and alignment with community baselines.
+
+- **Balanced Dataset Design:**  
+  The curated nature of MathBench ensures high data quality and avoids noise that often appears in scraped or synthetic datasets.
+
+---
+
+### **Model Comparison Plots**
 
 <p align="center">
   <img src="assets/compare.correct_by_model.png" alt="Correct answer percent by model" width="860" style="margin:8px;"/>
@@ -468,21 +508,35 @@ Below are representative comparison plots produced by the Math Agent evaluation 
   <img src="assets/compare.mean_ratings_by_model.png" alt="Mean ratings by model" width="860" style="margin:8px;"/>
 </p>
 
-**Conclusions from the plots & model selection**
+---
 
-The comparison visuals (correct-answer percentage, mean ratings and distribution boxplots) show a consistent pattern: Gemma-based adapters (the Gemma‑3 family used in our Milestone experiments) deliver the best trade-off between accuracy, consistency and operational cost. In the plots Gemma variants tend to have high mean ratings, tighter rating distributions (lower variance) and competitive correct-answer shares. Qwen3‑32B often matches or slightly exceeds Gemma on a few absolute metrics, but it requires substantially greater compute and memory resources — making it a strong premium option when infrastructure permits. Llama-family variants performed reasonably but displayed wider variance and, in some metrics, lower mean ratings than Gemma/Qwen in our runs.
+### **Conclusions from the Plots & Model Selection**
 
-Recommendation: adopt Gemma (LoRA adapters) as the primary Math Agent for production and continued tuning due to its balance of performance and deployability; reserve Qwen3‑32B for targeted high‑resource evaluations or final-stage comparisons when maximum absolute performance is required.
+The comparison visuals (correct-answer percentage, mean ratings, and rating distribution boxplots) show a clear pattern:
 
-Judge rubric (used by the automated LLM judge to score math outputs):
+- **Gemma-3 LoRA adapters** deliver the best balance between accuracy, consistency, and compute efficiency.  
+  - High mean ratings  
+  - Lower variance  
+  - Competitive correct-answer rates  
+
+- **Qwen3-32B** performs strongly and sometimes slightly exceeds Gemma-3 on individual metrics, but requires significantly more compute and memory—making it a **premium, high-resource option**.
+
+- **Llama-family models** perform reasonably but show wider variance and lower mean ratings compared to Gemma/Qwen during evaluation.
+
+**Recommendation:**  
+Use **Gemma-based LoRA adapters** as the primary Math Agent for production due to their strong balance of performance and deployability. Reserve **Qwen3-32B** for high-resource environments or final-stage comparative evaluations.
+
+---
+
+### **Judge Rubric (Used by the Automated LLM Judge)**
 
 ```python
 class Rubric(BaseModel):
-  correct_answer: bool
-  did_it_solve_in_easy_and_fast_approach: int
-  did_it_stop_midway: bool
-  easy_to_understand_explanation: int
-  notes: Optional[str] = None
+    correct_answer: bool
+    did_it_solve_in_easy_and_fast_approach: int
+    did_it_stop_midway: bool
+    easy_to_understand_explanation: int
+    notes: Optional[str] = None
 ```
 
 Note on the "did it stop midway" metric: we did not include a separate plot for this criterion in the comparison figures because, in our evaluation runs, both models consistently produced complete answers (no partial/stopped outputs), so the metric did not provide distinguishing information for these checkpoints.
