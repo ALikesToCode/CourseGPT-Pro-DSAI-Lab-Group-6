@@ -20,6 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingThreadId = document.getElementById('setting-thread-id');
     const resetSessionBtn = document.getElementById('reset-session-btn');
 
+    // --- Navigation Layout ---
+    const sidebar = document.querySelector('.sidebar');
+    const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+
     // --- State ---
     let currentFile = null;
     let threadId = localStorage.getItem('coursegpt_thread_id');
@@ -65,8 +69,29 @@ document.addEventListener('DOMContentLoaded', () => {
             if (targetViewId === 'docs-view') {
                 loadDocuments();
             }
+
+            // Collapse mobile sidebar after navigation
+            if (sidebar && sidebar.classList.contains('open')) {
+                sidebar.classList.remove('open');
+            }
         });
     });
+
+    if (mobileMenuToggle) {
+        mobileMenuToggle.addEventListener('click', () => {
+            if (!sidebar) return;
+            sidebar.classList.toggle('open');
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!sidebar) return;
+            const clickInsideSidebar = sidebar.contains(event.target);
+            const clickOnToggle = mobileMenuToggle.contains(event.target);
+            if (!clickInsideSidebar && !clickOnToggle) {
+                sidebar.classList.remove('open');
+            }
+        });
+    }
 
     // --- Chat Logic ---
 
@@ -344,6 +369,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p>${formatSize(file.size)} • ${new Date(file.last_modified).toLocaleDateString()}</p>
                 </div>
                 <div class="doc-actions">
+                    <button class="icon-btn" onclick="viewDocument('${file.key}')" title="View">
+                        <i data-feather="eye"></i>
+                    </button>
                     <button class="icon-btn" onclick="deleteDocument('${file.key}')" title="Delete">
                         <i data-feather="trash-2"></i>
                     </button>
@@ -353,6 +381,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         feather.replace();
     }
+
+    window.viewDocument = async (key) => {
+        try {
+            const response = await fetch(`/files/view/${encodeURIComponent(key)}`);
+            if (!response.ok) throw new Error('Unable to generate view link');
+
+            const data = await response.json();
+            if (data.url) {
+                window.open(data.url, '_blank', 'noopener');
+            }
+        } catch (error) {
+            console.error('View error:', error);
+            alert('Unable to open document preview');
+        }
+    };
 
     window.deleteDocument = async (key) => {
         if (!confirm(`Are you sure you want to delete "${key}"?`)) return;
