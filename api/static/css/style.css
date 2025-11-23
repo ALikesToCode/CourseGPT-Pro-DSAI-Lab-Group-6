@@ -417,6 +417,20 @@ body {
     display: none;
 }
 
+.message-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.message-status {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    padding: 0.5rem 0 0 0;
+}
+
+
 
 .message.ai-message .message-content {
     background-color: var(--msg-ai-bg);

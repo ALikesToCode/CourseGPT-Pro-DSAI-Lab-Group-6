@@ -267,12 +267,15 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="message-avatar">
                 <i data-feather="cpu"></i>
             </div>
-            <div class="message-content">
-                <div class="typing-indicator">
-                    <span>.</span><span>.</span><span>.</span>
+            <div class="message-wrapper">
+                <div class="message-handoff"></div>
+                <div class="message-content">
+                    <div class="typing-indicator">
+                        <span>.</span><span>.</span><span>.</span>
+                    </div>
                 </div>
+                <div class="message-status"></div>
             </div>
-            <div class="message-status muted-text" style="font-size: 0.75rem; margin-left: 3.5rem; margin-top: 0.25rem; color: var(--text-secondary);"></div>
         `;
         chatMessages.appendChild(messageDiv);
         feather.replace();
@@ -298,10 +301,12 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        // Insert before the message content
-        const contentDiv = messageDiv.querySelector('.message-content');
-        contentDiv.insertAdjacentHTML('beforebegin', handoffHtml);
-        feather.replace();
+        // Insert into handoff container at the top
+        const handoffContainer = messageDiv.querySelector('.message-handoff');
+        if (handoffContainer) {
+            handoffContainer.innerHTML = handoffHtml;
+            feather.replace();
+        }
     }
 
     function updateAiMessage(id, text) {
