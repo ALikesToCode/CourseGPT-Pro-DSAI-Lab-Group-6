@@ -9,6 +9,11 @@ from api.config import Settings
 
 
 logger = logging.getLogger(__name__)
+try:
+    import importlib.util
+    _HTTP2_ENABLED = importlib.util.find_spec("h2") is not None
+except Exception:
+    _HTTP2_ENABLED = False
 
 
 class CloudflareConfigurationError(RuntimeError):
@@ -27,6 +32,7 @@ class AISearchService:
     def __init__(self, settings: Settings):
         self._settings = settings
         self._base_url: Optional[str] = None
+        self._client: Optional[httpx.AsyncClient] = None
         if settings.has_ai_search:
             self._base_url = (
                 f"https://api.cloudflare.com/client/v4/accounts/"
@@ -59,6 +65,14 @@ class AISearchService:
         self._require_configuration()
         return await self._request("PATCH", "sync")
 
+    def _client_instance(self) -> httpx.AsyncClient:
+        """
+        Lazily create a shared HTTP client so we reuse the connection pool across requests.
+        """
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=30.0, http2=_HTTP2_ENABLED)
+        return self._client
+
     async def _request(
         self,
         method: str,
@@ -74,8 +88,8 @@ class AISearchService:
             "Content-Type": "application/json",
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.request(method, url, json=json, params=params, headers=headers)
+        client = self._client_instance()
+        response = await client.request(method, url, json=json, params=params, headers=headers)
 
         if response.status_code >= 400:
             logger.error("Cloudflare API error (%s %s): %s", method, path, response.text)

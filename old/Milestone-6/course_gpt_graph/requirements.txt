@@ -8,3 +8,4 @@ httpx>=0.26.0
 python-multipart>=0.0.9
 pytest>=8.0.0
 pypdf>=4.2.0
+h2>=4.1.0

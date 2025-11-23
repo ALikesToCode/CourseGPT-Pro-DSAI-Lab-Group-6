@@ -18,3 +18,4 @@ lxml_html_clean
 tavily-python
 daytona
 respx>=0.21.1
+h2>=4.1.0

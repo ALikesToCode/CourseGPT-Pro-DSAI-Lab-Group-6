@@ -21,6 +21,10 @@ class Gemini3Client(BaseChatModel):
     fallback_models: List[str] = []
     use_vertex: bool = False
     client: Any = None
+    api_key: Optional[str] = None
+    vertex_project: Optional[str] = None
+    vertex_location: Optional[str] = None
+    vertex_credentials_b64: Optional[str] = None
     native_tools: List[str] = []
     # We don't store tools/functions here directly for bind_tools mutation anymore,
     # but we keep them for internal state if needed or rely on kwargs in _generate.
@@ -39,10 +43,20 @@ class Gemini3Client(BaseChatModel):
         self.model_name = model
         self.fallback_models = fallback_models or []
         self.use_vertex = bool(vertex_project and vertex_credentials_b64)
+        self.api_key = api_key
+        self.vertex_project = vertex_project
+        self.vertex_location = vertex_location
+        self.vertex_credentials_b64 = vertex_credentials_b64
+        self.client = None # Lazy init
+        self.native_tools = []
 
+    def _get_client(self):
+        if self.client:
+            return self.client
+            
         if self.use_vertex:
             try:
-                decoded = base64.b64decode(vertex_credentials_b64)
+                decoded = base64.b64decode(self.vertex_credentials_b64)
                 creds_dict = json.loads(decoded)
             except (binascii.Error, json.JSONDecodeError) as exc:
                 raise ValueError("VERTEX_CREDENTIALS_JSON_B64 is not valid base64-encoded JSON") from exc
@@ -56,15 +70,15 @@ class Gemini3Client(BaseChatModel):
             )
             self.client = genai.Client(
                 vertexai=True,
-                project=vertex_project,
-                location=vertex_location or "us-central1",
+                project=self.vertex_project,
+                location=self.vertex_location or "us-central1",
                 credentials=creds,
             )
         else:
-            if not api_key:
+            if not self.api_key:
                 raise ValueError("Missing GEMINI_API_KEY or Vertex credentials")
-            self.client = genai.Client(api_key=api_key)
-        self.native_tools = []
+            self.client = genai.Client(api_key=self.api_key)
+        return self.client
 
     @property
     def _llm_type(self) -> str:
@@ -223,7 +237,7 @@ class Gemini3Client(BaseChatModel):
                 # but if fallback is different, we might need to adjust. 
                 # For simplicity, we assume _prepare_config logic holds or we'd need to rebuild config per model.
                 
-                response = self.client.models.generate_content(
+                response = self._get_client().models.generate_content(
                     model=model_name,
                     contents=contents,
                     config=current_config.copy(update=dict(system_instruction=system_instruction))
@@ -275,11 +289,11 @@ class Gemini3Client(BaseChatModel):
         # or we could loop try/catch but streaming fallback is trickier.
         # We'll stick to primary model.
         
-        stream = self.client.models.generate_content_stream(
-            model=self.model_name,
-            contents=contents,
-            config=config.copy(update=dict(system_instruction=system_instruction))
-        )
+        stream = self._get_client().models.generate_content_stream(
+                    model=self.model_name,
+                    contents=contents,
+                    config=config.copy(update=dict(system_instruction=system_instruction))
+                )
 
         for chunk in stream:
             content = chunk.text or ""

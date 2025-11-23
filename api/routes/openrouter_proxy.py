@@ -10,6 +10,28 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from api.config import get_settings
 
 router = APIRouter()
+# Reuse a single HTTP client to avoid re-establishing TLS connections per request.
+_shared_client: httpx.AsyncClient | None = None
+try:
+    import importlib.util
+    _HTTP2_ENABLED = importlib.util.find_spec("h2") is not None
+except Exception:
+    _HTTP2_ENABLED = False
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = httpx.AsyncClient(timeout=60.0, http2=_HTTP2_ENABLED)
+    return _shared_client
+
+
+@router.on_event("shutdown")
+async def _close_client() -> None:
+    global _shared_client
+    if _shared_client:
+        await _shared_client.aclose()
+        _shared_client = None
 
 
 async def _error_response(resp: httpx.Response) -> HTTPException:
@@ -41,8 +63,7 @@ async def openrouter_chat_completion(body: Dict[str, Any], settings=Depends(get_
     }
 
     stream = bool(body.get("stream"))
-
-    client = httpx.AsyncClient(timeout=60.0)
+    client = _get_client()
     if stream:
         async def event_stream():
             try:
@@ -59,19 +80,14 @@ async def openrouter_chat_completion(body: Dict[str, Any], settings=Depends(get_
             except Exception as exc:  # noqa: BLE001
                 error_payload = json.dumps({"error": str(exc)})
                 yield f"data: {error_payload}\n\n"
-            finally:
-                await client.aclose()
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+    resp = await client.post(url, headers=headers, json=body)
+    if resp.status_code >= 400:
+        raise await _error_response(resp)
     try:
-        resp = await client.post(url, headers=headers, json=body)
-        if resp.status_code >= 400:
-            raise await _error_response(resp)
-        try:
-            payload = resp.json()
-        except ValueError:
-            raise HTTPException(status_code=500, detail="OpenRouter returned non-JSON response")
-        return JSONResponse(content=payload, status_code=resp.status_code)
-    finally:
-        await client.aclose()
+        payload = resp.json()
+    except ValueError:
+        raise HTTPException(status_code=500, detail="OpenRouter returned non-JSON response")
+    return JSONResponse(content=payload, status_code=resp.status_code)

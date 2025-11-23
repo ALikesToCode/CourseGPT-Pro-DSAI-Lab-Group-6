@@ -8,6 +8,13 @@ import os
 from api.tools.general_agent_handoff import general_agent_handoff
 from langchain_openai import ChatOpenAI
 from api.config import get_settings
+from functools import lru_cache
+import httpx
+try:
+    import importlib.util
+    _HTTP2_ENABLED = importlib.util.find_spec("h2") is not None
+except Exception:
+    _HTTP2_ENABLED = False
 
 load_dotenv()
 
@@ -27,26 +34,65 @@ Available tools:
 
 from api.services.gemini_client import Gemini3Client
 
-def math_agent(state: CourseGPTState):
+from langchain_core.runnables import RunnableConfig
+
+
+@lru_cache(maxsize=4)
+def _http_client(timeout: float) -> httpx.Client:
+    return httpx.Client(timeout=timeout, http2=_HTTP2_ENABLED)
+
+
+@lru_cache(maxsize=8)
+def _cached_openai_llm(base_url: str, api_key: str, model: str, timeout: float) -> ChatOpenAI:
+    return ChatOpenAI(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        temperature=0,
+        http_client=_http_client(timeout),
+    )
+
+
+@lru_cache(maxsize=4)
+def _cached_gemini_llm(
+    api_key: str,
+    model: str,
+    fallback_models: tuple,
+    vertex_project: str,
+    vertex_location: str,
+    vertex_credentials_b64: str,
+) -> Gemini3Client:
+    return Gemini3Client(
+        api_key=api_key,
+        model=model,
+        fallback_models=list(fallback_models),
+        vertex_project=vertex_project,
+        vertex_location=vertex_location,
+        vertex_credentials_b64=vertex_credentials_b64,
+    )
+
+
+def math_agent(state: CourseGPTState, config: RunnableConfig):
 
     settings = get_settings()
+    timeout = float(os.getenv("MATH_AGENT_TIMEOUT", "30"))
 
     if settings.math_agent_url:
-        llm = ChatOpenAI(
+        llm = _cached_openai_llm(
             base_url=settings.math_agent_url,
             api_key=settings.math_agent_api_key or "dummy",
             model=settings.math_agent_model or "default",
-            temperature=0
+            timeout=timeout,
         )
     else:
         # Default to Gemini 3 Pro
-        llm = Gemini3Client(
+        llm = _cached_gemini_llm(
             api_key=settings.google_api_key,
             model=settings.gemini_model,
-            fallback_models=settings.gemini_fallback_models,
-            vertex_project=settings.vertex_project_id,
-            vertex_location=settings.vertex_location,
-            vertex_credentials_b64=settings.vertex_credentials_b64,
+            fallback_models=tuple(settings.gemini_fallback_models),
+            vertex_project=settings.vertex_project_id or "",
+            vertex_location=settings.vertex_location or "",
+            vertex_credentials_b64=settings.vertex_credentials_b64 or "",
         )
         llm.enable_google_search()
         llm.enable_code_execution()
@@ -58,6 +104,11 @@ def math_agent(state: CourseGPTState):
     ) or "- (no tools enabled)"
     system_message = SystemMessage(content=math_agent_prompt.format(tools_list=tools_list))
 
-    response = llm_with_tools.invoke([system_message] + state["messages"])
+    response = None
+    for chunk in llm_with_tools.stream([system_message] + state["messages"], config=config):
+        if response is None:
+            response = chunk
+        else:
+            response += chunk
 
     return {"messages": response}

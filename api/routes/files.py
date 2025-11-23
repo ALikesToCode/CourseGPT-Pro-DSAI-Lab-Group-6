@@ -5,6 +5,7 @@ from uuid import uuid4
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 
 from api.dependencies import get_r2_service
 from api.services.r2_storage import R2StorageService
@@ -36,11 +37,12 @@ async def upload_file(
     key = f"{safe_prefix}/{generated_name}" if safe_prefix else generated_name
 
     logger.debug("Uploading %s to R2 with prefix=%s", file.filename, safe_prefix)
-    result = r2_service.upload_fileobj(
+    result = await run_in_threadpool(
+        r2_service.upload_fileobj,
         file.file,
-        key=key,
-        content_type=file.content_type,
-        metadata={"original_filename": file.filename},
+        key,
+        file.content_type,
+        {"original_filename": file.filename},
     )
     logger.debug("Uploaded file stored at key=%s", result.get("key"))
     return {"message": "uploaded", "file": result}
@@ -56,7 +58,7 @@ async def list_files(
     if limit <= 0 or limit > 1000:
         raise HTTPException(status_code=400, detail="Limit must be between 1 and 1000")
 
-    files = r2_service.list_objects(prefix=prefix, max_items=limit)
+    files = await run_in_threadpool(r2_service.list_objects, prefix, limit)
     logger.debug("Retrieved %d file(s)", len(files))
     return {"files": files}
 
@@ -71,7 +73,7 @@ async def view_file(
         raise HTTPException(status_code=400, detail="Object key is required")
 
     try:
-        url = r2_service.generate_presigned_get_url(object_key, expires_in=expires_in)
+        url = await run_in_threadpool(r2_service.generate_presigned_get_url, object_key, expires_in)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -85,5 +87,5 @@ async def delete_file(
 ):
     if not object_key:
         raise HTTPException(status_code=400, detail="Object key is required")
-    r2_service.delete_object(object_key)
+    await run_in_threadpool(r2_service.delete_object, object_key)
     return {"message": "deleted", "key": object_key}

@@ -63,10 +63,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update View
             views.forEach(view => {
                 if (view.id === targetViewId) {
-                    view.classList.remove('hidden');
                     view.classList.add('active');
                 } else {
-                    view.classList.add('hidden');
                     view.classList.remove('active');
                 }
             });
@@ -142,11 +140,15 @@ document.addEventListener('DOMContentLoaded', () => {
     clearChatBtn.addEventListener('click', () => {
         chatMessages.innerHTML = `
             <div class="message ai-message">
+                <div class="message-avatar">
+                    <i data-feather="cpu"></i>
+                </div>
                 <div class="message-content">
                     <p>👋 Hello! I'm CourseGPT. I can help you with your course materials, solve math problems, or analyze documents. How can I assist you today?</p>
                 </div>
             </div>
         `;
+        feather.replace();
         setStreamStatus('Idle', 'idle');
     });
 
@@ -177,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
         createAiMessagePlaceholder(aiMessageId);
 
         try {
-            setStreamStatus('Connecting to agent...', 'connecting');
+            setStreamStatus('Connecting...', 'connecting');
             const formData = new FormData();
             formData.append('prompt', text);
             formData.append('thread_id', threadId);
@@ -199,7 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Network response was not ok');
             }
 
-            setStreamStatus('Streaming response...', 'streaming');
+            setStreamStatus('Streaming...', 'streaming');
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
@@ -231,16 +233,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             renderHandoff(aiMessageId, data.content);
                         } else if (data.type === 'status') {
                             updateStatus(aiMessageId, data.content);
-                            setStreamStatus(data.content.replace(/^node:/, 'Running ') || 'Streaming response...', 'streaming');
+                            setStreamStatus(data.content.replace(/^node:/, 'Running ') || 'Streaming...', 'streaming');
                         } else if (data.type === 'tool_use') {
                             updateStatus(aiMessageId, `Running tool: ${data.tool}`);
-                            setStreamStatus(`Running tool: ${data.tool}`, 'streaming');
+                            setStreamStatus(`Tool: ${data.tool}`, 'streaming');
                         } else if (data.type === 'token') {
                             aiText += data.content; // token chunk
                             updateAiMessage(aiMessageId, aiText);
                         } else if (data.type === 'error') {
                             console.error('Stream error:', data.content);
-                            setStreamStatus('Error during response', 'error');
+                            setStreamStatus('Error', 'error');
                             updateAiMessage(aiMessageId, aiText + '\n\n*Error: ' + data.content + '*');
                         }
                     } catch (e) {
@@ -252,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setStreamStatus('Idle', 'idle');
         } catch (error) {
             console.error('Error:', error);
-            setStreamStatus('Error during chat', 'error');
+            setStreamStatus('Error', 'error');
             updateAiMessage(aiMessageId, 'Sorry, something went wrong. Please try again.');
         }
     }
@@ -262,15 +264,19 @@ document.addEventListener('DOMContentLoaded', () => {
         messageDiv.id = id;
         messageDiv.classList.add('message', 'ai-message');
         messageDiv.innerHTML = `
+            <div class="message-avatar">
+                <i data-feather="cpu"></i>
+            </div>
             <div class="message-content">
                 <div class="typing-indicator">
                     <span>.</span><span>.</span><span>.</span>
                 </div>
             </div>
-            <div class="message-status muted-text"></div>
+            <div class="message-status muted-text" style="font-size: 0.75rem; margin-left: 3.5rem; margin-top: 0.25rem; color: var(--text-secondary);"></div>
         `;
         chatMessages.appendChild(messageDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        feather.replace();
+        scrollToBottom();
     }
 
     function renderHandoff(messageId, content) {
@@ -323,7 +329,7 @@ document.addEventListener('DOMContentLoaded', () => {
             throwOnError: false
         });
 
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        scrollToBottom();
     }
 
     function updateStatus(messageId, text) {
@@ -334,14 +340,31 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDiv.textContent = text;
     }
 
-    // Deprecated: addMessage (kept for simple user messages)
     function addMessage(text, sender) {
         if (sender === 'ai') return; // AI messages handled by streaming
 
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message', `${sender}-message`);
-        messageDiv.innerHTML = `<div class="message-content">${marked.parse(text)}</div>`;
+
+        let avatarHtml = '';
+        if (sender === 'user') {
+            avatarHtml = `
+                <div class="message-avatar">
+                    <i data-feather="user"></i>
+                </div>
+            `;
+        }
+
+        messageDiv.innerHTML = `
+            ${avatarHtml}
+            <div class="message-content">${marked.parse(text)}</div>
+        `;
         chatMessages.appendChild(messageDiv);
+        feather.replace();
+        scrollToBottom();
+    }
+
+    function scrollToBottom() {
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 

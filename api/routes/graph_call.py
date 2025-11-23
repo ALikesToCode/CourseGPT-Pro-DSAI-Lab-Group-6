@@ -344,7 +344,6 @@ async def graph_ask(
             # Guard the graph execution so slow upstream models don't hang the SSE forever.
             timeout_seconds = float(os.getenv("GRAPH_STREAM_TIMEOUT", "600"))
             streamed_lengths: Dict[str, int] = {}
-            chunk_size = 200  # characters per streamed token chunk
             
             try:
                 # 1. Process File Upload (if any)
@@ -399,59 +398,67 @@ async def graph_ask(
 
                 # 4. Run Graph
                 yield f"data: {json.dumps({'type': 'status', 'content': 'connecting:router_agent'})}\n\n"
+                
                 async with asyncio.timeout(timeout_seconds):
-                    async for event in course_graph.astream(
+                    async for event in course_graph.astream_events(
                         {"messages": [HumanMessage(content=prompt)]},
                         config=config,
-                        stream_mode="updates"
+                        version="v2"
                     ):
-                        for node_name, update in event.items():
-                            # Emit a status heartbeat whenever a node updates so the UI can show progress.
-                            yield f"data: {json.dumps({'type': 'status', 'content': f'node:{node_name}'})}\n\n"
+                        kind = event["event"]
+                        node_name = event.get("metadata", {}).get("langgraph_node", "")
+                        
+                        if kind == "on_chat_model_stream":
+                            # Stream tokens from agents
+                            content = event["data"]["chunk"].content
+                            if content:
+                                yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+                        
+                        elif kind == "on_tool_start":
+                            # Tool usage status
+                            tool_name = event["name"]
+                            if not tool_name.endswith("_handoff"):
+                                yield f"data: {json.dumps({'type': 'status', 'content': f'Running tool {tool_name}'})}\n\n"
+                                yield f"data: {json.dumps({'type': 'tool_use', 'tool': tool_name, 'input': event['data'].get('input')})}\n\n"
 
-                            messages = update.get("messages", [])
-                            normalized_messages = _normalize_messages(messages)
-
-                            # Handle Router Agent Handoffs
+                        elif kind == "on_chat_model_end":
+                            # Check for Router Handoffs
                             if node_name == "router_agent":
-                                debug_info = _extract_router_debug(normalized_messages)
-                                if debug_info:
-                                    logger.info(
-                                        "Router handoff thread=%s user=%s tool=%s",
-                                        thread_id,
-                                        user_id,
-                                        debug_info.get("tool"),
-                                    )
-                                    yield f"data: {json.dumps({'type': 'handoff', 'content': debug_info})}\n\n"
+                                output = event["data"]["output"]
+                                # output is ChatResult or AIMessage depending on runner? 
+                                # In astream_events, output is usually the result of the runnable.
+                                # For ChatModel, it's AIMessage.
+                                if hasattr(output, "tool_calls") and output.tool_calls:
+                                    for tool_call in output.tool_calls:
+                                        if tool_call.get("name", "").endswith("_handoff"):
+                                            args = tool_call.get("args") or {}
+                                            # Populate defaults so UI always shows target + rationale.
+                                            derived_handoff = args.get("handoff") or tool_call.get("name", "").replace("_handoff", "")
+                                            args.setdefault("handoff", derived_handoff)
+                                            args.setdefault(
+                                                "route_rationale",
+                                                f"Router selected {derived_handoff.replace('_', ' ')} based on the task."
+                                            )
+                                            args.setdefault(
+                                                "task_summary",
+                                                args.get("handoff_plan")
+                                                or args.get("route_plan")
+                                                or "Routing to specialized agent."
+                                            )
+                                            debug_info = {"tool": tool_call["name"], **args}
+                                            logger.info(
+                                                "Router handoff thread=%s user=%s tool=%s",
+                                                thread_id,
+                                                user_id,
+                                                debug_info.get("tool"),
+                                            )
+                                            yield f"data: {json.dumps({'type': 'handoff', 'content': debug_info})}\n\n"
+                        
+                        elif kind == "on_chain_start":
+                            # Node transitions
+                            if node_name and node_name != "__start__":
+                                yield f"data: {json.dumps({'type': 'status', 'content': f'node:{node_name}'})}\n\n"
 
-                            # Emit tool usage events for any node (except router handoffs)
-                            for msg in normalized_messages:
-                                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                                    for tc in msg.tool_calls:
-                                        if not tc.get("name", "").endswith("_handoff"):
-                                            # Emit a status heartbeat while waiting on tools
-                                            status_payload = {"type": "status", "content": f"Running tool {tc.get('name')}"}
-                                            yield f"data: {json.dumps(status_payload)}\n\n"
-                                            yield f"data: {json.dumps({'type': 'tool_use', 'tool': tc['name'], 'input': tc['args']})}\n\n"
-                            
-                            # Handle Agent Responses (Final Answer)
-                            if node_name in ["general_agent", "math_agent", "code_agent"]:
-                                latest_text = ""
-                                for msg in normalized_messages:
-                                    text = _message_content_text(msg)
-                                    if text:
-                                        latest_text = text
-
-                                if latest_text:
-                                    prev_len = streamed_lengths.get(node_name, 0)
-                                    delta = latest_text[prev_len:]
-                                    if delta:
-                                        streamed_lengths[node_name] = prev_len + len(delta)
-                                        # Emit in smaller chunks so the UI sees incremental updates
-                                        for idx in range(0, len(delta), chunk_size):
-                                            piece = delta[idx : idx + chunk_size]
-                                            yield f"data: {json.dumps({'type': 'token', 'content': piece})}\n\n"
-                
                 # Signal end of stream
                 yield "data: [DONE]\n\n"
 
