@@ -215,6 +215,9 @@ def render_chat(mock_api):
                         msg_type = chunk.get("type")
                         if msg_type == "token":
                             response_text += chunk.get("content", "")
+                        elif msg_type == "status":
+                            status_content = chunk.get("content", "Processing...")
+                            typing.markdown(f"<div class='typing'>{status_content}</div>", unsafe_allow_html=True)
                         elif msg_type == "handoff":
                             router_debug = chunk.get("content")
                         elif msg_type == "tool_use":
