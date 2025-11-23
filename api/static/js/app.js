@@ -293,8 +293,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <i data-feather="shuffle"></i>
                     <span>Handoff to ${handoffTarget.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
                 </div>
-                <div class="handoff-summary">${taskSummary}</div>
-                <div class="handoff-rationale">Rationale: ${rationale}</div>
+                <div class="handoff-summary">${taskSummary || 'Routing to specialist.'}</div>
+                <div class="handoff-rationale">Rationale: ${rationale || 'Selected based on task classification.'}</div>
             </div>
         `;
 
