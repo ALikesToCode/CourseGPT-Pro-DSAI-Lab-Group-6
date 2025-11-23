@@ -1,10 +1,17 @@
+import sys
+from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import json
 import asyncio
+from langchain_core.messages import AIMessage, ToolMessage
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from api.tools.rag_search import rag_search
 from api.routes.graph_call import _extract_router_debug
-from langchain_core.messages import AIMessage, ToolMessage
 
 # --- Test RAG Tool ---
 

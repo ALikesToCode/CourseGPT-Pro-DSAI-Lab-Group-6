@@ -17,3 +17,20 @@ def should_goto_tools(state: CourseGPTState):
     if hasattr(ai_message, "tool_calls") and len(ai_message.tool_calls) > 0:
         return "tools"
     return END
+
+
+def router_should_goto_tools(state: CourseGPTState):
+    """
+    Router-specific helper: if the router didn't emit a tool call, fall back to
+    the general agent instead of ending the graph with no answer.
+    """
+    if isinstance(state, list):
+        ai_message = state[-1]
+    elif messages := state.get("messages", []):
+        ai_message = messages[-1]
+    else:
+        raise ValueError(
+            f"No messages found in input state to tool_edge: {state}")
+    if hasattr(ai_message, "tool_calls") and len(ai_message.tool_calls) > 0:
+        return "tools"
+    return "general_agent"

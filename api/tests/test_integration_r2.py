@@ -45,7 +45,8 @@ skip_missing_r2 = pytest.mark.skipif(
 
 async def _request(client: httpx.AsyncClient, method: str, url: str, **kwargs):
     # Guard requests to avoid hanging the ASGI transport on multipart/file routes.
-    with anyio.fail_after(5):
+    # Give extra headroom for real network + R2 I/O.
+    with anyio.fail_after(30):
         return await client.request(method, url, **kwargs)
 
 

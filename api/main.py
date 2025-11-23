@@ -26,17 +26,11 @@ app.mount("/static", StaticFiles(directory=repo_root / "api" / "static"), name="
 templates = Jinja2Templates(directory=repo_root / "api" / "templates")
 
 
-@app.get("/", tags=["health"])
-async def root_health():
-    """
-    Lightweight health check at the root path to satisfy uptime probes and tests.
-    """
-    return {"status": "ok", "message": "CourseGPT graph service running"}
-
-
-
-@app.get("/ui")
+@app.get("/")
 async def get_chat_ui(request: Request):
+    """
+    Serve the chat UI at the root path.
+    """
     return templates.TemplateResponse("index.html", {"request": request})
 
 

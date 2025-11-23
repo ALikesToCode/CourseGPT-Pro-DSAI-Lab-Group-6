@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import time
 import os
 from typing import Any, Dict, List, Optional
 
@@ -119,6 +120,12 @@ def _truncate_text(text: str, limit: int = MAX_CONTEXT_CHARS) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+
+def _truncate_for_log(text: str, limit: int = 200) -> str:
+    if text is None:
+        return ""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 def _extract_text_from_pdf_bytes(payload: bytes) -> str:
@@ -311,6 +318,13 @@ async def graph_ask(
     """
 
     try:
+        start_time = time.monotonic()
+        logger.info(
+            "Graph chat start thread=%s user=%s prompt_preview=%s",
+            thread_id,
+            user_id,
+            _truncate_for_log(prompt),
+        )
         # if a file was uploaded, enforce PDF-only and attach bytes+metadata
         uploaded_context: Optional[Dict[str, Any]] = None
         if file is not None:
@@ -339,55 +353,88 @@ async def graph_ask(
         config = {
             "configurable": config_payload
         }
+        logger.info(
+            "Graph config thread=%s user=%s rag_docs=%s uploaded=%s",
+            thread_id,
+            user_id,
+            len(rag_context),
+            bool(uploaded_context),
+        )
 
         async def event_generator():
+            # Guard the graph execution so slow upstream models don't hang the SSE forever.
+            timeout_seconds = float(os.getenv("GRAPH_STREAM_TIMEOUT", "60"))
             streamed_lengths: Dict[str, int] = {}
+            chunk_size = 400  # characters per streamed token chunk
             try:
-                async for event in course_graph.astream(
-                    {"messages": [HumanMessage(content=prompt)]},
-                    config=config,
-                    stream_mode="updates"
-                ):
-                    for node_name, update in event.items():
-                        messages = update.get("messages", [])
-                        normalized_messages = _normalize_messages(messages)
+                async with asyncio.timeout(timeout_seconds):
+                    async for event in course_graph.astream(
+                        {"messages": [HumanMessage(content=prompt)]},
+                        config=config,
+                        stream_mode="updates"
+                    ):
+                        for node_name, update in event.items():
+                            messages = update.get("messages", [])
+                            normalized_messages = _normalize_messages(messages)
 
-                        # Handle Router Agent Handoffs
-                        if node_name == "router_agent":
-                            debug_info = _extract_router_debug(normalized_messages)
-                            if debug_info:
-                                yield f"data: {json.dumps({'type': 'handoff', 'content': debug_info})}\n\n"
+                            # Handle Router Agent Handoffs
+                            if node_name == "router_agent":
+                                debug_info = _extract_router_debug(normalized_messages)
+                                if debug_info:
+                                    logger.info(
+                                        "Router handoff thread=%s user=%s tool=%s",
+                                        thread_id,
+                                        user_id,
+                                        debug_info.get("tool"),
+                                    )
+                                    yield f"data: {json.dumps({'type': 'handoff', 'content': debug_info})}\n\n"
 
-                        # Emit tool usage events for any node (except router handoffs)
-                        for msg in normalized_messages:
-                            if hasattr(msg, "tool_calls") and msg.tool_calls:
-                                for tc in msg.tool_calls:
-                                    if not tc.get("name", "").endswith("_handoff"):
-                                        yield f"data: {json.dumps({'type': 'tool_use', 'tool': tc['name'], 'input': tc['args']})}\n\n"
-                        
-                        # Handle Agent Responses (Final Answer)
-                        if node_name in ["general_agent", "math_agent", "code_agent"]:
-                            latest_text = ""
+                            # Emit tool usage events for any node (except router handoffs)
                             for msg in normalized_messages:
-                                text = _message_content_text(msg)
-                                if text:
-                                    latest_text = text
+                                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                    for tc in msg.tool_calls:
+                                        if not tc.get("name", "").endswith("_handoff"):
+                                            # Emit a status heartbeat while waiting on tools
+                                            yield f"data: {json.dumps({'type': 'status', 'content': f'Running tool {tc.get('name')}'})}\n\n"
+                                            yield f"data: {json.dumps({'type': 'tool_use', 'tool': tc['name'], 'input': tc['args']})}\n\n"
+                            
+                            # Handle Agent Responses (Final Answer)
+                            if node_name in ["general_agent", "math_agent", "code_agent"]:
+                                latest_text = ""
+                                for msg in normalized_messages:
+                                    text = _message_content_text(msg)
+                                    if text:
+                                        latest_text = text
 
-                            if latest_text:
-                                prev_len = streamed_lengths.get(node_name, 0)
-                                delta = latest_text[prev_len:]
-                                if delta:
-                                    streamed_lengths[node_name] = prev_len + len(delta)
-                                    yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
-                        
+                                if latest_text:
+                                    prev_len = streamed_lengths.get(node_name, 0)
+                                    delta = latest_text[prev_len:]
+                                    if delta:
+                                        streamed_lengths[node_name] = prev_len + len(delta)
+                                        # Emit in smaller chunks so the UI sees incremental updates
+                                        for idx in range(0, len(delta), chunk_size):
+                                            piece = delta[idx : idx + chunk_size]
+                                            yield f"data: {json.dumps({'type': 'token', 'content': piece})}\n\n"
+                
                 # Signal end of stream
                 yield "data: [DONE]\n\n"
 
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Graph stream timeout thread=%s user=%s after %.1fs",
+                    thread_id,
+                    user_id,
+                    timeout_seconds,
+                )
+                yield f"data: {json.dumps({'type': 'error', 'content': f'Graph streaming timed out after {timeout_seconds}s'})}\n\n"
             except Exception as e:
                 logger.exception("Error during stream")
                 yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        response = StreamingResponse(event_generator(), media_type="text/event-stream")
+        elapsed = time.monotonic() - start_time
+        logger.info("Graph chat setup complete thread=%s user=%s elapsed=%.2fs", thread_id, user_id, elapsed)
+        return response
 
     except HTTPException:
         raise
