@@ -363,10 +363,12 @@ async def graph_ask(
 
         async def event_generator():
             # Guard the graph execution so slow upstream models don't hang the SSE forever.
-            timeout_seconds = float(os.getenv("GRAPH_STREAM_TIMEOUT", "60"))
+            timeout_seconds = float(os.getenv("GRAPH_STREAM_TIMEOUT", "600"))
             streamed_lengths: Dict[str, int] = {}
             chunk_size = 200  # characters per streamed token chunk
             try:
+                # Immediately notify the client that execution is starting.
+                yield f"data: {json.dumps({'type': 'status', 'content': 'connecting:router_agent'})}\n\n"
                 async with asyncio.timeout(timeout_seconds):
                     async for event in course_graph.astream(
                         {"messages": [HumanMessage(content=prompt)]},
