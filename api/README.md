@@ -21,6 +21,7 @@ This is a production-ready FastAPI microservice that uses LangGraph to orchestra
 
 **API Endpoints:**
 - 🏥 `GET /` - Health check for uptime monitoring
+- 🖥️ `GET /ui` - Minimal chat UI served via Jinja templates
 - 📁 `POST /files` - Upload documents to Cloudflare R2
 - 📋 `GET /files` - List stored files with pagination
 - 👁️ `GET /files/view/{key}` - Generate presigned URLs for secure viewing
@@ -28,7 +29,7 @@ This is a production-ready FastAPI microservice that uses LangGraph to orchestra
 - 🔍 `POST /ai-search/query` - RAG queries via Cloudflare AI Search
 - 📊 `GET /ai-search/files` - Check document indexing status
 - 🔄 `PATCH /ai-search/sync` - Trigger AutoRAG sync pipeline
-- 💬 `POST /chat` - Multi-agent chat (implemented but see [Known Issues](#known-issues))
+- 💬 `POST /graph/chat` - Multi-agent chat with SSE streaming (implemented but see [Known Issues](#known-issues))
 
 **AI Components:**
 - 🤖 Specialized agents: Router, Code, Math, General

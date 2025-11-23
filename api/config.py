@@ -72,7 +72,9 @@ class Settings:
         self.vertex_project_id = _env("VERTEX_PROJECT_ID", "GCP_PROJECT", "GOOGLE_CLOUD_PROJECT")
         self.vertex_location = _env("VERTEX_LOCATION", default="us-central1")
         self.vertex_credentials_b64 = _env("VERTEX_CREDENTIALS_JSON_B64", "VERTEX_CREDENTIALS_BASE64")
-        
+
+        self.tavily_api_key = _env("TAVILY_API_KEY")
+
         self.gemini_fallback_models = []
         i = 1
         while True:
@@ -105,6 +107,13 @@ class Settings:
         talk to Cloudflare AI Search (AutoRAG) APIs.
         """
         return bool(self.cloudflare_ai_search_token and self.cloudflare_account_id and self.cloudflare_rag_id)
+
+    @property
+    def has_tavily(self) -> bool:
+        """
+        Returns True when the configuration contains the Tavily API key.
+        """
+        return bool(self.tavily_api_key)
 
 
 @lru_cache

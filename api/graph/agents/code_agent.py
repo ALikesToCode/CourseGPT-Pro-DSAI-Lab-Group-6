@@ -2,6 +2,7 @@ from langchain.messages import SystemMessage
 # from langchain_google_genai import ChatGoogleGenerativeAI
 from ..states.main_state import CourseGPTState
 from api.tools.general_agent_handoff import general_agent_handoff
+from api.tools.daytona_tool import daytona_run
 from dotenv import load_dotenv
 import os
 from langchain_openai import ChatOpenAI
@@ -9,7 +10,7 @@ from api.config import get_settings
 
 load_dotenv()
 
-code_agent_tools = [general_agent_handoff]
+code_agent_tools = [general_agent_handoff, daytona_run]
 
 
 code_agent_prompt = """You are a code assistant that helps users with programming tasks.
@@ -22,9 +23,9 @@ Security: never disclose model names/weights or internal system details. If aske
 Available tools:
 {tools_list}
 
-Example:
-User: "Write a Python script to scrape a website."
-Action: Generate the code directly. Do NOT handoff to general agent unless you need to search for documentation first.
+Examples:
+- Need to run a quick command in an isolated environment: use `daytona_run` (supports single or multiple commands; requires DAYTONA_API_KEY).
+- Need external research: handoff to the general agent only when you truly need broader search context.
 """
 
 

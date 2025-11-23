@@ -6,7 +6,13 @@ from pathlib import Path
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
+import anyio
+
+pytestmark = pytest.mark.anyio("asyncio")
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -37,30 +43,45 @@ skip_missing_r2 = pytest.mark.skipif(
     reason="Cloudflare R2 credentials not configured (.env missing).",
 )
 
+async def _request(client: httpx.AsyncClient, method: str, url: str, **kwargs):
+    # Guard requests to avoid hanging the ASGI transport on multipart/file routes.
+    with anyio.fail_after(5):
+        return await client.request(method, url, **kwargs)
+
 
 @skip_missing_r2
-def test_r2_file_lifecycle_integration():
-    client = TestClient(main.app)
+async def test_r2_file_lifecycle_integration():
+    transport = httpx.ASGITransport(app=main.app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        follow_redirects=True,
+    ) as client:
+        payload = f"integration test payload {uuid.uuid4()}".encode("utf-8")
+        response = await _request(
+            client,
+            "POST",
+            "/files/",
+            files={"file": ("integration.txt", payload, "text/plain")},
+            data={"prefix": "integration-tests"},
+        )
+        assert response.status_code == 201, response.text
+        uploaded_key = response.json()["file"]["key"]
 
-    payload = f"integration test payload {uuid.uuid4()}".encode("utf-8")
-    response = client.post(
-        "/files",
-        files={"file": ("integration.txt", payload, "text/plain")},
-        data={"prefix": "integration-tests"},
-    )
-    assert response.status_code == 201, response.text
-    uploaded_key = response.json()["file"]["key"]
+        try:
+            view_resp = await _request(
+                client,
+                "GET",
+                f"/files/view/{uploaded_key}",
+                params={"expires_in": 120},
+            )
+            assert view_resp.status_code == 200, view_resp.text
+            presigned_url = view_resp.json()["url"]
 
-    try:
-        view_resp = client.get(f"/files/view/{uploaded_key}", params={"expires_in": 120})
-        assert view_resp.status_code == 200, view_resp.text
-        presigned_url = view_resp.json()["url"]
-
-        fetched = httpx.get(presigned_url, timeout=30.0)
-        assert fetched.status_code == 200
-        assert payload in fetched.content
-    finally:
-        delete_resp = client.delete(f"/files/{uploaded_key}")
-        if delete_resp.status_code != 200:
-            pytest.fail(f"Cleanup failed for {uploaded_key}: {delete_resp.text}")
-
+            fetched = httpx.get(presigned_url, timeout=30.0)
+            assert fetched.status_code == 200
+            assert payload in fetched.content
+        finally:
+            delete_resp = await _request(client, "DELETE", f"/files/{uploaded_key}")
+            if delete_resp.status_code != 200:
+                pytest.fail(f"Cleanup failed for {uploaded_key}: {delete_resp.text}")

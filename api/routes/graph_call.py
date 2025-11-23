@@ -79,6 +79,42 @@ def _extract_router_debug(messages):
     return None
 
 
+def _normalize_messages(messages):
+    """
+    Ensure we always iterate over a list of message-like objects.
+    """
+    if not messages:
+        return []
+    if isinstance(messages, list):
+        return messages
+    return [messages]
+
+
+def _message_content_text(message: Any) -> str:
+    """
+    Extract textual content from different message shapes (AIMessage, ToolMessage, dict).
+    """
+    content = ""
+    if hasattr(message, "content"):
+        content = message.content
+    elif isinstance(message, dict):
+        content = message.get("content") or message.get("text")
+
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for chunk in content:
+            if isinstance(chunk, str):
+                parts.append(chunk)
+            elif isinstance(chunk, dict):
+                text_val = chunk.get("text")
+                if isinstance(text_val, str):
+                    parts.append(text_val)
+        return "".join(parts)
+    return str(content) if content else ""
+
+
 def _truncate_text(text: str, limit: int = MAX_CONTEXT_CHARS) -> str:
     if len(text) <= limit:
         return text
@@ -305,63 +341,45 @@ async def graph_ask(
         }
 
         async def event_generator():
-            # Track how much content has already been streamed per node so we can
-            # emit incremental deltas instead of re-sending full messages.
             streamed_lengths: Dict[str, int] = {}
             try:
-                # Stream updates from the graph
                 async for event in course_graph.astream(
                     {"messages": [HumanMessage(content=prompt)]},
                     config=config,
                     stream_mode="updates"
                 ):
-                    # event is a dict {node_name: update}
                     for node_name, update in event.items():
+                        messages = update.get("messages", [])
+                        normalized_messages = _normalize_messages(messages)
+
                         # Handle Router Agent Handoffs
                         if node_name == "router_agent":
-                            messages = update.get("messages", [])
-                            if messages:
-                                # Check for handoff tool calls
-                                debug_info = _extract_router_debug(messages)
-                                if debug_info:
-                                    yield f"data: {json.dumps({'type': 'handoff', 'content': debug_info})}\n\n"
+                            debug_info = _extract_router_debug(normalized_messages)
+                            if debug_info:
+                                yield f"data: {json.dumps({'type': 'handoff', 'content': debug_info})}\n\n"
+
+                        # Emit tool usage events for any node (except router handoffs)
+                        for msg in normalized_messages:
+                            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                for tc in msg.tool_calls:
+                                    if not tc.get("name", "").endswith("_handoff"):
+                                        yield f"data: {json.dumps({'type': 'tool_use', 'tool': tc['name'], 'input': tc['args']})}\n\n"
                         
                         # Handle Agent Responses (Final Answer)
-                        # We assume the last message from a leaf agent is the answer
                         if node_name in ["general_agent", "math_agent", "code_agent"]:
-                            messages = update.get("messages", [])
-                            if messages:
-                                # Debug logging
-                                print(f"DEBUG: Node {node_name} returned messages type: {type(messages)}")
-                                
-                                if isinstance(messages, list):
-                                    last_msg = messages[-1]
-                                else:
-                                    # It's a single message object (e.g. AIMessage)
-                                    last_msg = messages
+                            latest_text = ""
+                            for msg in normalized_messages:
+                                text = _message_content_text(msg)
+                                if text:
+                                    latest_text = text
 
-                                content = ""
-                                if hasattr(last_msg, "content"):
-                                    content = last_msg.content
-                                elif isinstance(last_msg, dict):
-                                    content = last_msg.get("content") or ""
-                                
-                                if content:
-                                    if delta:
-                                        yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
-                                        streamed_lengths[node_name] = prev_len + len(delta)
+                            if latest_text:
+                                prev_len = streamed_lengths.get(node_name, 0)
+                                delta = latest_text[prev_len:]
+                                if delta:
+                                    streamed_lengths[node_name] = prev_len + len(delta)
+                                    yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
                         
-                        # Handle Tool Calls (e.g. RAG Search)
-                        messages = update.get("messages", [])
-                        if messages:
-                            if isinstance(messages, list):
-                                for msg in messages:
-                                    if hasattr(msg, "tool_calls") and msg.tool_calls:
-                                        for tc in msg.tool_calls:
-                                            # Skip handoff tools as they are handled by router logic
-                                            if not tc.get("name", "").endswith("_handoff"):
-                                                yield f"data: {json.dumps({'type': 'tool_use', 'tool': tc['name'], 'input': tc['args']})}\n\n"
-                
                 # Signal end of stream
                 yield "data: [DONE]\n\n"
 

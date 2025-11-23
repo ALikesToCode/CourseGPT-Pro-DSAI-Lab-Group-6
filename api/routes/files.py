@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
+import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
@@ -9,6 +10,7 @@ from api.dependencies import get_r2_service
 from api.services.r2_storage import R2StorageService
 
 router = APIRouter(prefix="/files", tags=["files"])
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -33,12 +35,14 @@ async def upload_file(
     generated_name = f"{timestamp}-{uuid4().hex}{extension}"
     key = f"{safe_prefix}/{generated_name}" if safe_prefix else generated_name
 
+    logger.debug("Uploading %s to R2 with prefix=%s", file.filename, safe_prefix)
     result = r2_service.upload_fileobj(
         file.file,
         key=key,
         content_type=file.content_type,
         metadata={"original_filename": file.filename},
     )
+    logger.debug("Uploaded file stored at key=%s", result.get("key"))
     return {"message": "uploaded", "file": result}
 
 
@@ -48,10 +52,12 @@ async def list_files(
     limit: int = 50,
     r2_service: R2StorageService = Depends(get_r2_service),
 ):
+    logger.debug("Listing files with prefix=%s limit=%s", prefix, limit)
     if limit <= 0 or limit > 1000:
         raise HTTPException(status_code=400, detail="Limit must be between 1 and 1000")
 
     files = r2_service.list_objects(prefix=prefix, max_items=limit)
+    logger.debug("Retrieved %d file(s)", len(files))
     return {"files": files}
 
 
