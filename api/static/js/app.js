@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileName = document.getElementById('file-name');
     const removeFileBtn = document.getElementById('remove-file');
     const clearChatBtn = document.getElementById('clear-chat-btn');
+    const streamStatus = document.getElementById('stream-status');
 
     // --- Docs Elements ---
     const docsList = document.getElementById('docs-list');
@@ -40,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('coursegpt_thread_id', threadId);
         localStorage.setItem('coursegpt_user_id', userId);
     }
+    setStreamStatus('Idle', 'idle');
 
     // Update Settings View
     if (settingUserId) settingUserId.value = userId;
@@ -145,7 +147,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `;
+        setStreamStatus('Idle', 'idle');
     });
+
+    function setStreamStatus(text, state = 'idle') {
+        if (!streamStatus) return;
+        streamStatus.dataset.state = state;
+        const dot = streamStatus.querySelector('.stream-dot');
+        const label = streamStatus.querySelector('.stream-text');
+        if (label) label.textContent = text;
+        if (dot && state === 'connecting') dot.classList.add('pulse');
+        else if (dot) dot.classList.remove('pulse');
+    }
 
     async function sendMessage() {
         const text = userInput.value.trim();
@@ -164,6 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
         createAiMessagePlaceholder(aiMessageId);
 
         try {
+            setStreamStatus('Connecting to agent...', 'connecting');
             const formData = new FormData();
             formData.append('prompt', text);
             formData.append('thread_id', threadId);
@@ -180,45 +194,65 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: formData
             });
 
-            if (!response.ok) throw new Error('Network response was not ok');
+            if (!response.ok) {
+                setStreamStatus('Request failed', 'error');
+                throw new Error('Network response was not ok');
+            }
+
+            setStreamStatus('Streaming response...', 'streaming');
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let aiText = '';
+            let pending = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
                 const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n\n');
+                pending += chunk;
+                const segments = pending.split('\n\n');
+                // keep last segment as pending if it doesn't end with delimiter
+                pending = segments.pop() || '';
 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const dataStr = line.slice(6);
-                        if (dataStr === '[DONE]') break;
+                for (const line of segments) {
+                    if (!line.startsWith('data: ')) continue;
+                    const dataStr = line.slice(6);
+                    if (dataStr === '[DONE]') {
+                        pending = '';
+                        break;
+                    }
 
-                        try {
-                            const data = JSON.parse(dataStr);
+                    try {
+                        const data = JSON.parse(dataStr);
 
-                            if (data.type === 'handoff') {
-                                renderHandoff(aiMessageId, data.content);
-                            } else if (data.type === 'token') {
-                                aiText += data.content; // In this case, content is the full message chunk from the node
-                                updateAiMessage(aiMessageId, aiText);
-                            } else if (data.type === 'error') {
-                                console.error('Stream error:', data.content);
-                                updateAiMessage(aiMessageId, aiText + '\n\n*Error: ' + data.content + '*');
-                            }
-                        } catch (e) {
-                            console.error('Error parsing SSE:', e);
+                        if (data.type === 'handoff') {
+                            renderHandoff(aiMessageId, data.content);
+                        } else if (data.type === 'status') {
+                            updateStatus(aiMessageId, data.content);
+                            setStreamStatus(data.content.replace(/^node:/, 'Running ') || 'Streaming response...', 'streaming');
+                        } else if (data.type === 'tool_use') {
+                            updateStatus(aiMessageId, `Running tool: ${data.tool}`);
+                            setStreamStatus(`Running tool: ${data.tool}`, 'streaming');
+                        } else if (data.type === 'token') {
+                            aiText += data.content; // token chunk
+                            updateAiMessage(aiMessageId, aiText);
+                        } else if (data.type === 'error') {
+                            console.error('Stream error:', data.content);
+                            setStreamStatus('Error during response', 'error');
+                            updateAiMessage(aiMessageId, aiText + '\n\n*Error: ' + data.content + '*');
                         }
+                    } catch (e) {
+                        console.error('Error parsing SSE:', e);
                     }
                 }
             }
 
+            setStreamStatus('Idle', 'idle');
         } catch (error) {
             console.error('Error:', error);
+            setStreamStatus('Error during chat', 'error');
             updateAiMessage(aiMessageId, 'Sorry, something went wrong. Please try again.');
         }
     }
@@ -233,6 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span>.</span><span>.</span><span>.</span>
                 </div>
             </div>
+            <div class="message-status muted-text"></div>
         `;
         chatMessages.appendChild(messageDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -289,6 +324,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function updateStatus(messageId, text) {
+        const messageDiv = document.getElementById(messageId);
+        if (!messageDiv) return;
+        const statusDiv = messageDiv.querySelector('.message-status');
+        if (!statusDiv) return;
+        statusDiv.textContent = text;
     }
 
     // Deprecated: addMessage (kept for simple user messages)

@@ -365,7 +365,7 @@ async def graph_ask(
             # Guard the graph execution so slow upstream models don't hang the SSE forever.
             timeout_seconds = float(os.getenv("GRAPH_STREAM_TIMEOUT", "60"))
             streamed_lengths: Dict[str, int] = {}
-            chunk_size = 400  # characters per streamed token chunk
+            chunk_size = 200  # characters per streamed token chunk
             try:
                 async with asyncio.timeout(timeout_seconds):
                     async for event in course_graph.astream(
@@ -374,6 +374,9 @@ async def graph_ask(
                         stream_mode="updates"
                     ):
                         for node_name, update in event.items():
+                            # Emit a status heartbeat whenever a node updates so the UI can show progress.
+                            yield f"data: {json.dumps({'type': 'status', 'content': f'node:{node_name}'})}\n\n"
+
                             messages = update.get("messages", [])
                             normalized_messages = _normalize_messages(messages)
 
@@ -395,7 +398,8 @@ async def graph_ask(
                                     for tc in msg.tool_calls:
                                         if not tc.get("name", "").endswith("_handoff"):
                                             # Emit a status heartbeat while waiting on tools
-                                            yield f"data: {json.dumps({'type': 'status', 'content': f'Running tool {tc.get('name')}'})}\n\n"
+                                            status_payload = {"type": "status", "content": f"Running tool {tc.get('name')}"}
+                                            yield f"data: {json.dumps(status_payload)}\n\n"
                                             yield f"data: {json.dumps({'type': 'tool_use', 'tool': tc['name'], 'input': tc['args']})}\n\n"
                             
                             # Handle Agent Responses (Final Answer)

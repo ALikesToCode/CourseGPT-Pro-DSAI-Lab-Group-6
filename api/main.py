@@ -9,7 +9,7 @@ repo_root = Path(__file__).resolve().parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from api.routes import ai_search_router, files_router, health_router, graph_call
+from api.routes import ai_search_router, files_router, health_router, graph_call, openrouter_router
 
 app = FastAPI(
     title="CourseGPT Graph",
@@ -20,6 +20,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(files_router)
 app.include_router(ai_search_router)
+app.include_router(openrouter_router)
 app.include_router(graph_call.router, prefix="/graph")
 
 app.mount("/static", StaticFiles(directory=repo_root / "api" / "static"), name="static")

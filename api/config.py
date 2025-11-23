@@ -74,6 +74,14 @@ class Settings:
         self.vertex_credentials_b64 = _env("VERTEX_CREDENTIALS_JSON_B64", "VERTEX_CREDENTIALS_BASE64")
 
         self.tavily_api_key = _env("TAVILY_API_KEY")
+        self.openrouter_api_key = _env(
+            "OPENROUTER_API_KEY",
+            "ROUTER_AGENT_API_KEY",
+            "CODE_AGENT_API_KEY",
+            "GENERAL_AGENT_API_KEY",
+            "MATH_AGENT_API_KEY",
+        )
+        self.openrouter_base_url = _env("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1")
 
         self.gemini_fallback_models = []
         i = 1

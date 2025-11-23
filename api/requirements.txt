@@ -17,3 +17,4 @@ requests-html
 lxml_html_clean
 tavily-python
 daytona
+respx>=0.21.1
