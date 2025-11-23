@@ -50,10 +50,16 @@ def router_should_goto_tools(state: CourseGPTState):
 
     if user_text:
         lower = user_text.lower()
-        # Math-ish patterns: numbers + operators or explicit math keywords.
-        if re.search(r"[0-9][^a-zA-Z]*(?:\+|-|\*|/|\^)", user_text) or any(
-            kw in lower for kw in ["solve", "derivative", "integral", "equation", "quadratic", "roots"]
-        ):
+        # Math-ish patterns: numbers + operators or explicit math keywords, or stats vocabulary.
+        math_keywords = [
+            "solve", "derivative", "integral", "equation", "quadratic", "roots",
+            "normal distribution", "mean", "standard deviation", "variance", "sigma", "z-value", "z score",
+            "probability", "demand", "inventory", "newsvendor", "optimal order", "critical ratio", "service level",
+            "forecast", "gaussian", "poisson", "binomial",
+        ]
+        if re.search(r"[0-9]", user_text) and any(kw in lower for kw in math_keywords):
+            return "math_agent"
+        if re.search(r"[0-9][^a-zA-Z]*(?:\+|-|\*|/|\^)", user_text):
             return "math_agent"
         # Code-ish patterns: language names or obvious coding verbs.
         if any(kw in lower for kw in ["python", "javascript", "java", "c++", "c#", "code", "bug", "traceback"]):

@@ -21,6 +21,11 @@ router_agent_tools = [general_agent_handoff, code_agent_handoff, math_agent_hand
 
 router_agent_prompt = """You are the routing assistant. Pick the correct handoff (code_agent_handoff, math_agent_handoff, or general_agent_handoff). Respond ONLY with a single tool call—no user-facing text.
 
+Classify the ask first, then break it into 3–5 substeps (thinking_outline) and route accordingly. Prefer:
+- math_agent_handoff for quantitative/calculus/algebra/probability/statistics/inventory/forecasting terms (e.g., mean, sigma, z-score, distribution, optimal order, CR/service level, derivatives, integrals, proofs).
+- code_agent_handoff for programming, debugging, stack traces, language/library mentions.
+- general_agent_handoff for planning/research/coordination/general Q&A.
+
 Keep the args concise and structured:
 - task_summary: one sentence.
 - thinking_outline: 3–5 numbered steps with at least one verification step.

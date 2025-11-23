@@ -53,6 +53,8 @@ graph.add_conditional_edges(
     router_should_goto_tools,
     {
         "tools": "router_agent_tools",
+        "math_agent": "math_agent",
+        "code_agent": "code_agent",
         "general_agent": "general_agent",
         END: END
     }
