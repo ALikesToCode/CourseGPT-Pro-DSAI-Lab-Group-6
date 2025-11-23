@@ -200,12 +200,19 @@ async def _fetch_rag_context(
         logger.exception("Unexpected error during RAG fetch")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    hits = (
+    raw_hits = (
         response.get("result")
         or response.get("results")
         or response.get("data")
         or []
     )
+    
+    if isinstance(raw_hits, dict) and "data" in raw_hits:
+        hits = raw_hits["data"]
+    elif isinstance(raw_hits, list):
+        hits = raw_hits
+    else:
+        hits = []
 
     contexts: List[Dict[str, Any]] = []
     for idx, hit in enumerate(hits[:DEFAULT_RAG_RESULTS]):
@@ -218,19 +225,34 @@ async def _fetch_rag_context(
                 or payload_blob.get("snippet")
             )
 
-        text = (
+        # Extract text from various possible fields
+        raw_text = (
             hit.get("text")
             or hit.get("content")
             or hit.get("snippet")
             or payload_text
-            or ""
-        ).strip()
+        )
+
+        text = ""
+        if isinstance(raw_text, str):
+            text = raw_text
+        elif isinstance(raw_text, list):
+            # Handle list of content chunks (e.g. Cloudflare structure)
+            parts = []
+            for item in raw_text:
+                if isinstance(item, dict):
+                    parts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    parts.append(item)
+            text = "\n\n".join(filter(None, parts))
+        
+        text = text.strip()
 
         contexts.append(
             {
                 "id": hit.get("id") or hit.get("document_id") or f"hit-{idx}",
                 "score": hit.get("score"),
-                "metadata": hit.get("metadata") or hit.get("payload"),
+                "metadata": hit.get("metadata") or hit.get("payload") or hit.get("attributes"),
                 "text": _truncate_text(text) if text else "",
             }
         )
