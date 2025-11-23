@@ -14,6 +14,7 @@ from api.config import get_settings
 from langchain_core.messages import AIMessage
 import logging
 import asyncio
+import httpx
 load_dotenv()
 
 router_agent_tools = [general_agent_handoff, code_agent_handoff, math_agent_handoff]
@@ -115,37 +116,52 @@ from api.services.gemini_client import Gemini3Client
 def router_agent(state: CourseGPTState):
 
     settings = get_settings()
-    llm_timeout = float(os.getenv("ROUTER_AGENT_TIMEOUT", "20"))
+    llm_timeout = float(os.getenv("ROUTER_AGENT_TIMEOUT", "12"))
     logger = logging.getLogger(__name__)
-    
-    if settings.router_agent_url:
-        llm = ChatOpenAI(
+
+    # Primary: OpenRouter (if configured)
+    primary_llm = None
+    fallback_llm = None
+
+    if settings.router_agent_url and settings.router_agent_api_key:
+        # Use a short client timeout to avoid hanging the graph.
+        http_client = httpx.Client(timeout=llm_timeout)
+        primary_llm = ChatOpenAI(
             base_url=settings.router_agent_url,
-            api_key=settings.router_agent_api_key or "dummy",
+            api_key=settings.router_agent_api_key,
             model=settings.router_agent_model or "default",
             temperature=0,
-            timeout=llm_timeout,
+            http_client=http_client,
         )
-    else:
-        # Default to Gemini 3 Pro
-        llm = Gemini3Client(
-            api_key=settings.google_api_key,
-            model=settings.gemini_model,
-            fallback_models=settings.gemini_fallback_models,
-            vertex_project=settings.vertex_project_id,
-            vertex_location=settings.vertex_location,
-            vertex_credentials_b64=settings.vertex_credentials_b64,
-        )
-        
+
+    # Fallback: Gemini (local/vertex) when available
+    fallback_llm = Gemini3Client(
+        api_key=settings.google_api_key,
+        model=settings.gemini_model,
+        fallback_models=settings.gemini_fallback_models,
+        vertex_project=settings.vertex_project_id,
+        vertex_location=settings.vertex_location,
+        vertex_credentials_b64=settings.vertex_credentials_b64,
+    )
+
+    llm = primary_llm or fallback_llm
     llm.bind_tools(router_agent_tools, parallel_tool_calls=False)
 
     system_message = SystemMessage(content=router_agent_prompt)
 
     try:
-        response = llm.invoke([system_message] + state["messages"])
+        # Hard wall to avoid >GRAPH_STREAM_TIMEOUT stalls.
+        response = asyncio.run(asyncio.wait_for(
+            asyncio.to_thread(llm.invoke, [system_message] + state["messages"]),
+            timeout=llm_timeout,
+        ))
     except Exception as exc:  # noqa: BLE001
         logger.warning("Router agent failed or timed out; falling back to general agent. Error: %s", exc)
-        # Return a simple AIMessage so graph will continue to general_agent via router_should_goto_tools
-        response = AIMessage(content="Routing fallback: defaulting to general agent.")
+        try:
+            response = fallback_llm.invoke([system_message] + state["messages"])
+        except Exception as fallback_exc:  # noqa: BLE001
+            logger.error("Router fallback also failed: %s", fallback_exc)
+            # Return a simple AIMessage so graph will continue to general_agent via router_should_goto_tools
+            response = AIMessage(content="Routing fallback: defaulting to general agent.")
 
     return {"messages": response}
