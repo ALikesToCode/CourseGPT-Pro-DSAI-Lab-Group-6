@@ -63,13 +63,13 @@ def general_agent(state: CourseGPTState):
         )
         llm.enable_google_search()
 
-    llm.bind_tools(general_agent_tools, parallel_tool_calls=False)
+    llm_with_tools = llm.bind_tools(general_agent_tools, parallel_tool_calls=False)
 
     tools_list = "\n".join(
         [f"- `{tool.name}`: {tool.description}" for tool in general_agent_tools]
     ) or "- (no tools enabled)"
     system_message = SystemMessage(content=general_agent_prompt.format(tools_list=tools_list))
 
-    response = llm.invoke([system_message] + state["messages"])
+    response = llm_with_tools.invoke([system_message] + state["messages"])
 
     return {"messages": response}

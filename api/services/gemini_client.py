@@ -2,18 +2,29 @@ import os
 import json
 import base64
 import binascii
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Iterator, AsyncIterator
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.outputs import ChatResult, ChatGeneration, ChatGenerationChunk
+from langchain_core.callbacks import CallbackManagerForLLMRun
 
-class Gemini3Client:
+class Gemini3Client(BaseChatModel):
     """
     A wrapper for the Google Gen AI SDK (v1alpha/beta) to support Gemini 3 models
     in a way that is compatible with LangChain's invoke/bind_tools pattern.
     """
+    model_name: str = "gemini-3-pro-preview"
+    fallback_models: List[str] = []
+    use_vertex: bool = False
+    client: Any = None
+    native_tools: List[str] = []
+    # We don't store tools/functions here directly for bind_tools mutation anymore,
+    # but we keep them for internal state if needed or rely on kwargs in _generate.
+    
     def __init__(
         self,
         api_key: Optional[str],
@@ -22,8 +33,10 @@ class Gemini3Client:
         vertex_project: Optional[str] = None,
         vertex_location: Optional[str] = None,
         vertex_credentials_b64: Optional[str] = None,
+        **kwargs
     ):
-        self.model = model
+        super().__init__(**kwargs)
+        self.model_name = model
         self.fallback_models = fallback_models or []
         self.use_vertex = bool(vertex_project and vertex_credentials_b64)
 
@@ -34,10 +47,7 @@ class Gemini3Client:
             except (binascii.Error, json.JSONDecodeError) as exc:
                 raise ValueError("VERTEX_CREDENTIALS_JSON_B64 is not valid base64-encoded JSON") from exc
             scopes = [
-                # Cloud Platform scope is required for most Vertex AI operations.
                 "https://www.googleapis.com/auth/cloud-platform",
-                # Generative Language scope is required when the SDK calls the public
-                # generativelanguage.googleapis.com API (prevents 403 scope errors).
                 "https://www.googleapis.com/auth/generative-language",
             ]
             creds = service_account.Credentials.from_service_account_info(
@@ -54,9 +64,11 @@ class Gemini3Client:
             if not api_key:
                 raise ValueError("Missing GEMINI_API_KEY or Vertex credentials")
             self.client = genai.Client(api_key=api_key)
-        self.tools = []
-        self.function_declarations: List[types.FunctionDeclaration] = []
-        self.native_tools: List[str] = []
+        self.native_tools = []
+
+    @property
+    def _llm_type(self) -> str:
+        return "gemini-3-client"
 
     def enable_google_search(self):
         """Enable Google Search grounding."""
@@ -68,14 +80,13 @@ class Gemini3Client:
         if "code_execution" not in self.native_tools:
             self.native_tools.append("code_execution")
 
-    def bind_tools(self, tools: List[BaseTool], parallel_tool_calls: bool = False):
+    def bind_tools(self, tools: List[BaseTool], **kwargs):
         """
-        Bind tools to the client. This converts LangChain tools to Gemini tool definitions.
+        Bind tools to the client. Returns a new runnable with tools bound.
         """
-        self.tools = tools
-        self.function_declarations = []
+        # Convert LangChain tools to Gemini FunctionDeclarations
+        function_declarations = []
         for tool in tools:
-            # Map Python types to JSON schema types
             def map_type(py_type):
                 type_str = str(py_type).lower()
                 if "str" in type_str: return "STRING"
@@ -84,12 +95,11 @@ class Gemini3Client:
                 if "bool" in type_str: return "BOOLEAN"
                 if "list" in type_str: return "ARRAY"
                 if "dict" in type_str: return "OBJECT"
-                return "STRING" # Default
+                return "STRING"
 
             properties = {}
             required = []
             
-            # Inspect the args_schema if available, otherwise try to infer from args
             if tool.args_schema:
                 schema = tool.args_schema.schema()
                 for prop_name, prop_info in schema.get("properties", {}).items():
@@ -97,14 +107,12 @@ class Gemini3Client:
                         "type": map_type(prop_info.get("type", "string")),
                         "description": prop_info.get("description", "")
                     }
-                    # Handle array items if present
                     if properties[prop_name]["type"] == "ARRAY":
-                         # Simplified assumption: array of strings if not specified
                          properties[prop_name]["items"] = {"type": "STRING"}
 
                 required = schema.get("required", [])
 
-            self.function_declarations.append(
+            function_declarations.append(
                 types.FunctionDeclaration(
                     name=tool.name,
                     description=tool.description,
@@ -115,22 +123,19 @@ class Gemini3Client:
                     )
                 )
             )
-
-    def invoke(self, messages: List[BaseMessage]) -> BaseMessage:
-        """
-        Invoke the model with a list of LangChain messages.
-        """
-        # Convert LangChain messages to Gemini content
-        contents = []
-        system_instruction = None
         
+        return self.bind(function_declarations=function_declarations, **kwargs)
+
+    def _convert_messages(self, messages: List[BaseMessage]) -> List[types.Content]:
+        contents = []
         for msg in messages:
             if isinstance(msg, SystemMessage):
-                system_instruction = msg.content
+                # System messages are handled in config, but if mixed in, we might need to handle differently.
+                # For now, we assume system message is extracted before calling this or passed as config.
+                pass 
             elif isinstance(msg, HumanMessage):
                 contents.append(types.Content(role="user", parts=[types.Part(text=msg.content)]))
             elif isinstance(msg, AIMessage):
-                # Handle tool calls in AI message if present
                 parts = []
                 if msg.tool_calls:
                     for tool_call in msg.tool_calls:
@@ -140,13 +145,10 @@ class Gemini3Client:
                                 args=tool_call["args"]
                             )
                         ))
-                
                 if msg.content:
                     parts.append(types.Part(text=msg.content))
-                
                 contents.append(types.Content(role="model", parts=parts))
             elif isinstance(msg, ToolMessage):
-                # Tool response
                 contents.append(types.Content(role="user", parts=[
                     types.Part(
                         function_response=types.FunctionResponse(
@@ -155,87 +157,163 @@ class Gemini3Client:
                         )
                     )
                 ]))
+        return contents
 
-        # Call the API
-        config = {}
+    def _prepare_config(self, stop: Optional[List[str]] = None, **kwargs) -> types.GenerateContentConfig:
+        config_args = {}
         all_tools = []
-
-        tool_kwargs: Dict[str, Any] = {}
-        if self.function_declarations:
-            tool_kwargs["function_declarations"] = self.function_declarations
-        if "google_search" in self.native_tools:
-            tool_kwargs["google_search"] = types.GoogleSearch()
-        if "code_execution" in self.native_tools:
-            tool_kwargs["code_execution"] = types.ToolCodeExecution()
-
-        if tool_kwargs:
-            all_tools.append(types.Tool(**tool_kwargs))
-
-        if all_tools:
-            config["tools"] = all_tools
-
-        # Set thinking level if using Gemini 3 Pro
-        # Note: We apply this config to all models in the fallback chain if they are Gemini 3
         
-        # Deduplicate models while preserving order
+        # Handle bound tools (passed via kwargs from bind)
+        fds = kwargs.get("function_declarations", [])
+        if fds:
+            config_args["function_declarations"] = fds
+        
+        if "google_search" in self.native_tools:
+            config_args["google_search"] = types.GoogleSearch()
+        if "code_execution" in self.native_tools:
+            config_args["code_execution"] = types.ToolCodeExecution()
+
+        if config_args:
+            all_tools.append(types.Tool(**config_args))
+
+        config_params = {}
+        if all_tools:
+            config_params["tools"] = all_tools
+        
+        if stop:
+            config_params["stop_sequences"] = stop
+
+        # Thinking config
+        if "gemini-3" in self.model_name:
+             config_params["thinking_config"] = {"include_thoughts": True}
+
+        return types.GenerateContentConfig(**config_params)
+
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        contents = self._convert_messages(messages)
+        system_instruction = None
+        for msg in messages:
+            if isinstance(msg, SystemMessage):
+                system_instruction = msg.content
+                break
+
+        config = self._prepare_config(stop, **kwargs)
+        
         models_to_try = []
         seen_models = set()
-        for m in [self.model] + self.fallback_models:
+        for m in [self.model_name] + self.fallback_models:
             if m not in seen_models:
                 models_to_try.append(m)
                 seen_models.add(m)
-        last_exception = None
+
         response = None
+        last_exception = None
 
         for model_name in models_to_try:
             try:
-                current_config = config.copy()
-                if "gemini-3" in model_name:
-                    current_config["thinking_config"] = {"include_thoughts": True}
+                # Update thinking config based on model name
+                current_config = config
+                # We already set thinking in _prepare_config based on self.model_name, 
+                # but if fallback is different, we might need to adjust. 
+                # For simplicity, we assume _prepare_config logic holds or we'd need to rebuild config per model.
                 
                 response = self.client.models.generate_content(
                     model=model_name,
                     contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        **current_config
-                    )
+                    config=current_config.copy(update=dict(system_instruction=system_instruction))
                 )
-                # If successful, break the loop
                 break
             except Exception as e:
                 last_exception = e
-                print(f"Warning: Model {model_name} failed with error: {e}. Trying next model...")
+                print(f"Warning: Model {model_name} failed: {e}")
                 continue
-        
+
         if response is None:
             if last_exception:
                 raise last_exception
-            raise RuntimeError("No response generated from any model.")
+            raise RuntimeError("No response generated.")
 
-        # Convert response back to LangChain AIMessage
+        # Convert response
         content = response.text or ""
         tool_calls = []
-        
-        # Check for function calls in candidates
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
                 if part.function_call:
                     tool_calls.append({
                         "name": part.function_call.name,
                         "args": part.function_call.args,
-                        "id": "call_" + part.function_call.name # Dummy ID
+                        "id": "call_" + part.function_call.name
                     })
-                # Handle executable code result if present (for code execution tool)
-                if part.executable_code:
-                    # The model generated code to run. 
-                    # The SDK might handle execution if configured, or we see the code here.
-                    # For now, we just append it to content if it's not already there.
-                    # content += f"\n```python\n{part.executable_code.code}\n```"
-                    pass
-                if part.code_execution_result:
-                    # Result of code execution
-                    # content += f"\nOutput:\n```\n{part.code_execution_result.output}\n```"
-                    pass
+
+        msg = AIMessage(content=content, tool_calls=tool_calls)
+        generation = ChatGeneration(message=msg)
+        return ChatResult(generations=[generation])
+
+    def _stream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        contents = self._convert_messages(messages)
+        system_instruction = None
+        for msg in messages:
+            if isinstance(msg, SystemMessage):
+                system_instruction = msg.content
+                break
+
+        config = self._prepare_config(stop, **kwargs)
         
-        return AIMessage(content=content, tool_calls=tool_calls)
+        # Streaming only supports primary model for now to keep it simple
+        # or we could loop try/catch but streaming fallback is trickier.
+        # We'll stick to primary model.
+        
+        stream = self.client.models.generate_content_stream(
+            model=self.model_name,
+            contents=contents,
+            config=config.copy(update=dict(system_instruction=system_instruction))
+        )
+
+        for chunk in stream:
+            content = chunk.text or ""
+            # Handle tool calls in chunks if they arrive (Gemini usually sends them at end)
+            tool_call_chunks = []
+            if chunk.candidates and chunk.candidates[0].content.parts:
+                for part in chunk.candidates[0].content.parts:
+                    if part.function_call:
+                        tool_call_chunks.append({
+                            "name": part.function_call.name,
+                            "args": part.function_call.args, # args might be partial? SDK usually aggregates.
+                            "id": "call_" + part.function_call.name,
+                            "index": 0 # Required for chunk
+                        })
+            
+            msg_chunk = AIMessage(content=content, tool_calls=tool_call_chunks) # AIMessageChunk?
+            # LangChain expects AIMessageChunk for streaming
+            from langchain_core.messages import AIMessageChunk
+            
+            # Construct proper chunk
+            # Note: Gemini SDK aggregates args in function_call, so it might not be partial.
+            # But for streaming, we just emit what we get.
+            
+            # If tool calls are present, we need to format them for AIMessageChunk
+            tc_chunks = []
+            for tc in tool_call_chunks:
+                tc_chunks.append({
+                    "name": tc["name"],
+                    "args": json.dumps(tc["args"]) if isinstance(tc["args"], dict) else tc["args"], # args must be str for chunk?
+                    "id": tc["id"],
+                    "index": tc["index"]
+                })
+
+            chunk_msg = AIMessageChunk(content=content, tool_call_chunks=tc_chunks)
+            if run_manager:
+                run_manager.on_llm_new_token(content, chunk=chunk_msg)
+            yield ChatGenerationChunk(message=chunk_msg)

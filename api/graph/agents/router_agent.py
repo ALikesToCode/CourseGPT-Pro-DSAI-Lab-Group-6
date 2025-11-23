@@ -75,12 +75,12 @@ def router_agent(state: CourseGPTState):
     )
 
     llm = primary_llm or fallback_llm
-    llm.bind_tools(router_agent_tools, parallel_tool_calls=True)
+    llm_with_tools = llm.bind_tools(router_agent_tools, parallel_tool_calls=True)
 
     system_message = SystemMessage(content=router_agent_prompt)
 
     def _call_router():
-        return llm.invoke([system_message] + state["messages"])
+        return llm_with_tools.invoke([system_message] + state["messages"])
 
     try:
         # Hard wall on router latency to avoid graph timeouts.

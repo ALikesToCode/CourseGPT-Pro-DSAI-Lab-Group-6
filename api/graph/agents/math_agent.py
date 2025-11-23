@@ -51,13 +51,13 @@ def math_agent(state: CourseGPTState):
         llm.enable_google_search()
         llm.enable_code_execution()
 
-    llm.bind_tools(math_agent_tools, parallel_tool_calls=False)
+    llm_with_tools = llm.bind_tools(math_agent_tools, parallel_tool_calls=False)
 
     tools_list = "\n".join(
         [f"- `{tool.name}`: {tool.description}" for tool in math_agent_tools]
     ) or "- (no tools enabled)"
     system_message = SystemMessage(content=math_agent_prompt.format(tools_list=tools_list))
 
-    response = llm.invoke([system_message] + state["messages"])
+    response = llm_with_tools.invoke([system_message] + state["messages"])
 
     return {"messages": response}
