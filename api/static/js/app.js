@@ -3,22 +3,41 @@ document.addEventListener('DOMContentLoaded', () => {
     marked.setOptions({ breaks: true });
 
     function normalizeMathContent(raw) {
-        // Avoid touching fenced code blocks
+        /**
+         * Heuristically wrap bare LaTeX into delimiters so KaTeX can render it.
+         * - Skip fenced code blocks and inline backtick code.
+         * - If a paragraph contains LaTeX commands but no $ delimiters, wrap inline with $...$
+         *   or block with $$...$$ if it spans multiple lines or looks equation-like.
+         */
         const lines = raw.split('\n');
-        let inCode = false;
-        return lines.map(line => {
+        let inFence = false;
+        const fenceRegex = /^```/;
+        const inlineCodeRegex = /`[^`]*`/g;
+        const latexCommandRegex = /\\(begin|end|frac|sqrt|sum|int|pm|geq|leq|times|div|alpha|beta|gamma|delta|Delta|Sigma|pi|theta|lambda|sigma|log|cdot|vec|bar|hat|tilde)/;
+        const mathyLineRegex = /[=±√∞∑∫π]/;
+
+        const processed = lines.map((line) => {
             const trimmed = line.trim();
-            if (trimmed.startsWith('```')) {
-                inCode = !inCode;
+            if (fenceRegex.test(trimmed)) {
+                inFence = !inFence;
                 return line;
             }
-            if (inCode || line.includes('$')) return line;
-            const hasLatex = /\\(sqrt|frac|sum|int|pm|geq|leq|times|div|alpha|beta|gamma|Delta|Sigma|pi|theta|lambda|log)/.test(line);
-            if (hasLatex) {
-                return `$${line.trim()}$`;
+            if (inFence || trimmed.includes('$') || latexCommandRegex.test(inlineCodeRegex.test(trimmed) ? trimmed.replace(inlineCodeRegex, '') : trimmed) === false) {
+                return line;
             }
-            return line;
-        }).join('\n');
+
+            const hasLatex = latexCommandRegex.test(trimmed);
+            const looksEquation = mathyLineRegex.test(trimmed) || trimmed.length > 80 || trimmed.includes('=');
+
+            if (!hasLatex) return line;
+
+            if (looksEquation || line.includes('\\begin') || line.includes('\\end')) {
+                return `$$\n${trimmed}\n$$`;
+            }
+            return `$${trimmed}$`;
+        });
+
+        return processed.join('\n');
     }
     // --- Chat Elements ---
     const chatMessages = document.getElementById('chat-messages');
