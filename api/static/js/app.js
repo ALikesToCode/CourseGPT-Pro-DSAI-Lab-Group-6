@@ -323,16 +323,32 @@ document.addEventListener('DOMContentLoaded', () => {
             hljs.highlightElement(block);
         });
 
-        // Render LaTeX
-        renderMathInElement(contentDiv, {
-            delimiters: [
-                { left: '$$', right: '$$', display: true },
-                { left: '$', right: '$', display: false },
-                { left: '\\(', right: '\\)', display: false },
-                { left: '\\[', right: '\\]', display: true }
-            ],
-            throwOnError: false
-        });
+        // Render LaTeX with robust configuration
+        try {
+            renderMathInElement(contentDiv, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '\\[', right: '\\]', display: true }
+                ],
+                throwOnError: false,
+                errorColor: '#cc0000',
+                strict: false,
+                trust: true,
+                macros: {
+                    "\\RR": "\\mathbb{R}",
+                    "\\NN": "\\mathbb{N}",
+                    "\\ZZ": "\\mathbb{Z}",
+                    "\\QQ": "\\mathbb{Q}",
+                    "\\CC": "\\mathbb{C}"
+                },
+                fleqn: false,
+                ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+            });
+        } catch (e) {
+            console.error('KaTeX rendering error:', e);
+        }
 
         scrollToBottom();
     }

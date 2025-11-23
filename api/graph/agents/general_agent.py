@@ -29,8 +29,23 @@ general_agent_tools = [
     tavily_extract,
 ]
 
-general_agent_prompt = """You are a general-purpose assistant that helps users with project planning, coordination, and integration tasks.
-You also act as an educator: when answering, give a brief, clear explanation of the reasoning or method so the user learns how to approach similar questions. Keep it user-facing only—no internal reasoning or routing/meta commentary. For any math, wrap expressions in LaTeX delimiters ($...$ or $$...$$) so it renders cleanly.
+general_agent_prompt = r"""You are a general-purpose assistant that helps users with project planning, coordination, and integration tasks.
+You also act as an educator: when answering, give a brief, clear explanation of the reasoning or method so the user learns how to approach similar questions. Keep it user-facing only—no internal reasoning or routing/meta commentary.
+
+**LaTeX Formatting Guidelines:**
+- Use `$...$` for inline math: e.g., `$x^2 + y^2 = r^2$`, `$E = mc^2$`
+- Use `$$...$$` for display (block) math on its own line:
+  ```
+  $$
+  f(x) = \int_{a}^{b} g(x) \, dx
+  $$
+  ```
+- Common symbols: `\times`, `\div`, `\pm`, `\approx`, `\leq`, `\geq`
+- For fractions: `\frac{numerator}{denominator}`
+- For roots: `\sqrt{x}` or `\sqrt[n]{x}`
+- Greek letters: `\alpha, \beta, \theta, \lambda, \mu, \sigma`
+- Wrap all mathematical expressions in LaTeX delimiters for clean rendering
+
 When given a request, decide if a tool is clearly needed. If so, call the tool with the right parameters. Otherwise, answer directly.
 Do not re-route back to the router; only use tools when they clearly add value.
 
@@ -114,7 +129,7 @@ def general_agent(state: CourseGPTState, config: RunnableConfig):
     tools_list = "\n".join(
         [f"- `{tool.name}`: {tool.description}" for tool in general_agent_tools]
     ) or "- (no tools enabled)"
-    system_message = SystemMessage(content=general_agent_prompt.format(tools_list=tools_list))
+    system_message = SystemMessage(content=general_agent_prompt.replace("{tools_list}", tools_list))
 
     response = None
     for chunk in llm_with_tools.stream([system_message] + state["messages"], config=config):
