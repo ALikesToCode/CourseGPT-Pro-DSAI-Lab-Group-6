@@ -1,4 +1,25 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Markdown / Math helpers ---
+    marked.setOptions({ breaks: true });
+
+    function normalizeMathContent(raw) {
+        // Avoid touching fenced code blocks
+        const lines = raw.split('\n');
+        let inCode = false;
+        return lines.map(line => {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('```')) {
+                inCode = !inCode;
+                return line;
+            }
+            if (inCode || line.includes('$')) return line;
+            const hasLatex = /\\(sqrt|frac|sum|int|pm|geq|leq|times|div|alpha|beta|gamma|Delta|Sigma|pi|theta|lambda|log)/.test(line);
+            if (hasLatex) {
+                return `$${line.trim()}$`;
+            }
+            return line;
+        }).join('\n');
+    }
     // --- Chat Elements ---
     const chatMessages = document.getElementById('chat-messages');
     const userInput = document.getElementById('user-input');
@@ -316,7 +337,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const contentDiv = messageDiv.querySelector('.message-content');
 
         // Parse Markdown and LaTeX
-        contentDiv.innerHTML = marked.parse(text);
+        const normalized = normalizeMathContent(text);
+        contentDiv.innerHTML = marked.parse(normalized);
 
         // Highlight code
         contentDiv.querySelectorAll('pre code').forEach((block) => {
@@ -378,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         messageDiv.innerHTML = `
             ${avatarHtml}
-            <div class="message-content">${marked.parse(text)}</div>
+            <div class="message-content">${marked.parse(normalizeMathContent(text))}</div>
         `;
         chatMessages.appendChild(messageDiv);
         feather.replace();
