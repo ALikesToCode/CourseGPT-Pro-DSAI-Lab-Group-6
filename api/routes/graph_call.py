@@ -325,49 +325,79 @@ async def graph_ask(
             user_id,
             _truncate_for_log(prompt),
         )
-        # if a file was uploaded, enforce PDF-only and attach bytes+metadata
-        uploaded_context: Optional[Dict[str, Any]] = None
+
+        # We need to read the file here because UploadFile is not async-safe to pass into the generator directly
+        # if we close the request context. However, for StreamingResponse, it's safer to read bytes now.
+        file_bytes = None
+        filename = ""
+        content_type = ""
         if file is not None:
             filename = (file.filename or "").lower()
             is_pdf = (file.content_type == "application/pdf") or filename.endswith(".pdf")
             if not is_pdf:
                 raise HTTPException(status_code=400, detail="Only PDF file uploads are accepted")
-            uploaded_context = await _process_uploaded_file(file)
-
-        rag_context = await _fetch_rag_context(
-            ai_service,
-            prompt,
-            user_id=user_id,
-            additional_context=uploaded_context["text"] if uploaded_context else None,
-        )
-
-        config_payload: Dict[str, Any] = {
-            "thread_id": thread_id,
-            "user_id": user_id,
-        }
-        if rag_context:
-            config_payload["rag_documents"] = rag_context
-        if uploaded_context:
-            config_payload["uploaded_file"] = uploaded_context
-
-        config = {
-            "configurable": config_payload
-        }
-        logger.info(
-            "Graph config thread=%s user=%s rag_docs=%s uploaded=%s",
-            thread_id,
-            user_id,
-            len(rag_context),
-            bool(uploaded_context),
-        )
+            file_bytes = await file.read()
+            content_type = file.content_type
+            file.file.seek(0)
 
         async def event_generator():
             # Guard the graph execution so slow upstream models don't hang the SSE forever.
             timeout_seconds = float(os.getenv("GRAPH_STREAM_TIMEOUT", "600"))
             streamed_lengths: Dict[str, int] = {}
             chunk_size = 200  # characters per streamed token chunk
+            
             try:
-                # Immediately notify the client that execution is starting.
+                # 1. Process File Upload (if any)
+                uploaded_context: Optional[Dict[str, Any]] = None
+                if file_bytes:
+                    yield f"data: {json.dumps({'type': 'status', 'content': 'Processing uploaded file...'})}\n\n"
+                    # Re-construct a mock UploadFile-like object or just pass bytes to a helper
+                    # But _process_uploaded_file expects UploadFile. Let's refactor or just do the logic here.
+                    # We'll use a helper that takes bytes to avoid re-wrapping UploadFile.
+                    
+                    text = await _call_remote_ocr(file_bytes, filename, content_type)
+                    if not text:
+                        text = await asyncio.to_thread(_extract_text_from_pdf_bytes, file_bytes)
+                    
+                    if text:
+                        uploaded_context = {
+                            "filename": filename,
+                            "content_type": content_type,
+                            "text": _truncate_text(text),
+                        }
+
+                # 2. Fetch RAG Context
+                yield f"data: {json.dumps({'type': 'status', 'content': 'Fetching RAG context...'})}\n\n"
+                rag_context = await _fetch_rag_context(
+                    ai_service,
+                    prompt,
+                    user_id=user_id,
+                    additional_context=uploaded_context["text"] if uploaded_context else None,
+                )
+
+                # 3. Prepare Config
+                config_payload: Dict[str, Any] = {
+                    "thread_id": thread_id,
+                    "user_id": user_id,
+                }
+                if rag_context:
+                    config_payload["rag_documents"] = rag_context
+                if uploaded_context:
+                    config_payload["uploaded_file"] = uploaded_context
+
+                config = {
+                    "configurable": config_payload
+                }
+                
+                logger.info(
+                    "Graph config thread=%s user=%s rag_docs=%s uploaded=%s",
+                    thread_id,
+                    user_id,
+                    len(rag_context),
+                    bool(uploaded_context),
+                )
+
+                # 4. Run Graph
                 yield f"data: {json.dumps({'type': 'status', 'content': 'connecting:router_agent'})}\n\n"
                 async with asyncio.timeout(timeout_seconds):
                     async for event in course_graph.astream(
