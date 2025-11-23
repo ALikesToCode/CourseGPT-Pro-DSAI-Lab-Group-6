@@ -22,11 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 inFence = !inFence;
                 return line;
             }
-            if (inFence || trimmed.includes('$') || latexCommandRegex.test(inlineCodeRegex.test(trimmed) ? trimmed.replace(inlineCodeRegex, '') : trimmed) === false) {
-                return line;
-            }
+            if (inFence || trimmed.includes('$')) return line;
 
-            const hasLatex = latexCommandRegex.test(trimmed);
+            // Remove inline code snippets before testing for LaTeX tokens
+            const sanitized = inlineCodeRegex.test(trimmed) ? trimmed.replace(inlineCodeRegex, '') : trimmed;
+            const hasLatex = latexCommandRegex.test(sanitized);
             const looksEquation = mathyLineRegex.test(trimmed) || trimmed.length > 80 || trimmed.includes('=');
 
             if (!hasLatex) return line;
