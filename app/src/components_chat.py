@@ -212,11 +212,29 @@ def render_chat(mock_api):
                     user_id=st.session_state["user_id"]
                 ):
                     if isinstance(chunk, dict):
-                        response_text += chunk.get("text", "")
-                        router_debug = chunk.get("router_debug") or router_debug
+                        msg_type = chunk.get("type")
+                        if msg_type == "token":
+                            response_text += chunk.get("content", "")
+                        elif msg_type == "handoff":
+                            router_debug = chunk.get("content")
+                        elif msg_type == "tool_use":
+                            tool_name = chunk.get("tool")
+                            tool_input = chunk.get("input")
+                            ai_ph.markdown(
+                                f"<div class='msg-ai' style='background:#1e293b; border: 1px solid #334155; padding: 8px; margin-bottom: 5px; font-size: 0.85em; color: #94a3b8;'>"
+                                f"🛠️ <strong>Using Tool:</strong> <code>{tool_name}</code><br/>"
+                                f"<span style='font-family:monospace'>{str(tool_input)[:100]}...</span>"
+                                f"</div>", 
+                                unsafe_allow_html=True
+                            )
+                        elif msg_type == "error":
+                            st.error(chunk.get("content"))
                     else:
                         response_text += str(chunk)
-                    ai_ph.markdown(f"<div class='msg-ai'>{response_text}</div>", unsafe_allow_html=True)
+                    
+                    # Only update the main text bubble if we have text
+                    if response_text:
+                        ai_ph.markdown(f"<div class='msg-ai'>{response_text}</div>", unsafe_allow_html=True)
                     st.markdown(
                         """
                         <script>

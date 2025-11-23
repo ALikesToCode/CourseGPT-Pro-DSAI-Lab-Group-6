@@ -8,11 +8,9 @@ class APIClient:
         # Prefer env override so deployed Streamlit UIs can point at a remote FastAPI instance.
         self.base_url = base_url or os.getenv("COURSEGPT_API_BASE", "http://127.0.0.1:8000")
 
-    def chat(self, prompt: str, thread_id: str, user_id: str, file: Optional[tuple] = None) -> Generator[str, None, None]:
+    def chat(self, prompt: str, thread_id: str, user_id: str, file: Optional[tuple] = None) -> Generator[Dict[str, Any], None, None]:
         """
-        Send a chat message to the API and yield the response chunks.
-        Note: The current API returns a single JSON response, not a stream.
-        We will simulate streaming for the UI if needed, or just yield the result.
+        Send a chat message to the API and yield the response chunks via SSE.
         """
         url = f"{self.base_url}/chat"
         data = {
@@ -22,19 +20,26 @@ class APIClient:
         }
         files = {}
         if file:
-            # file is a tuple of (filename, file_bytes, content_type)
             files["file"] = file
 
         try:
-            response = requests.post(url, data=data, files=files if files else None)
-            response.raise_for_status()
-            result = response.json()
-            yield {
-                "text": result.get("latest_message", ""),
-                "router_debug": result.get("router_debug"),
-            }
+            import json
+            with requests.post(url, data=data, files=files if files else None, stream=True) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if line:
+                        decoded_line = line.decode('utf-8')
+                        if decoded_line.startswith("data: "):
+                            data_str = decoded_line[6:]
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                data_json = json.loads(data_str)
+                                yield data_json
+                            except json.JSONDecodeError:
+                                continue
         except requests.RequestException as e:
-            yield f"Error communicating with API: {str(e)}"
+            yield {"type": "error", "content": f"Error communicating with API: {str(e)}"}
 
     def upload_file(self, file_bytes: bytes, filename: str, content_type: str = "application/pdf") -> Dict[str, Any]:
         """

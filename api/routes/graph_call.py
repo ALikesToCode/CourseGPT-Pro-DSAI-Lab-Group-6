@@ -325,11 +325,20 @@ async def graph_ask(
                                     content = last_msg.get("content") or ""
                                 
                                 if content:
-                                    prev_len = streamed_lengths.get(node_name, 0)
-                                    delta = content[prev_len:]
                                     if delta:
                                         yield f"data: {json.dumps({'type': 'token', 'content': delta})}\n\n"
                                         streamed_lengths[node_name] = prev_len + len(delta)
+                        
+                        # Handle Tool Calls (e.g. RAG Search)
+                        messages = update.get("messages", [])
+                        if messages:
+                            if isinstance(messages, list):
+                                for msg in messages:
+                                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                        for tc in msg.tool_calls:
+                                            # Skip handoff tools as they are handled by router logic
+                                            if not tc.get("name", "").endswith("_handoff"):
+                                                yield f"data: {json.dumps({'type': 'tool_use', 'tool': tc['name'], 'input': tc['args']})}\n\n"
                 
                 # Signal end of stream
                 yield "data: [DONE]\n\n"
