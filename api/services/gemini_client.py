@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import binascii
+import re
 from typing import Any, Dict, List, Optional, Union, Iterator, AsyncIterator
 from google import genai
 from google.genai import types
@@ -140,6 +141,68 @@ class Gemini3Client(BaseChatModel):
         
         return self.bind(function_declarations=function_declarations, **kwargs)
 
+    def _data_url_to_blob(self, url: str) -> Optional[types.Blob]:
+        """
+        Parse data URLs (e.g., data:image/png;base64,...) into Gemini Blob objects.
+        """
+        if not isinstance(url, str) or not url.startswith("data:"):
+            return None
+        match = re.match(r"data:(?P<mime>[^;]+);base64,(?P<data>.+)", url)
+        if not match:
+            return None
+        mime = match.group("mime") or "application/octet-stream"
+        try:
+            data = base64.b64decode(match.group("data"))
+        except binascii.Error:
+            return None
+        return types.Blob(mime_type=mime, data=data)
+
+    def _convert_human_parts(self, content: Union[str, List[Any]]) -> List[types.Part]:
+        """
+        Support multimodal messages with text + inline image data (data URLs).
+        """
+        parts: List[types.Part] = []
+
+        if isinstance(content, str):
+            return [types.Part(text=content)]
+
+        if not isinstance(content, list):
+            return [types.Part(text=str(content))]
+
+        for chunk in content:
+            if isinstance(chunk, str):
+                parts.append(types.Part(text=chunk))
+                continue
+
+            if not isinstance(chunk, dict):
+                parts.append(types.Part(text=str(chunk)))
+                continue
+
+            chunk_type = chunk.get("type")
+            if chunk_type == "text" and isinstance(chunk.get("text"), str):
+                parts.append(types.Part(text=chunk["text"]))
+                continue
+
+            if chunk_type == "image_url":
+                url_payload = chunk.get("image_url")
+                if isinstance(url_payload, dict):
+                    url = url_payload.get("url")
+                else:
+                    url = url_payload or chunk.get("url")
+
+                blob = self._data_url_to_blob(url) if url else None
+                if blob:
+                    parts.append(types.Part(inline_data=blob))
+                continue
+
+            # Fallback: embed unknown dicts as text to avoid dropping content
+            if "text" in chunk and isinstance(chunk["text"], str):
+                parts.append(types.Part(text=chunk["text"]))
+            else:
+                parts.append(types.Part(text=str(chunk)))
+
+        return parts
+
     def _convert_messages(self, messages: List[BaseMessage]) -> List[types.Content]:
         contents = []
         for msg in messages:
@@ -148,7 +211,7 @@ class Gemini3Client(BaseChatModel):
                 # For now, we assume system message is extracted before calling this or passed as config.
                 pass 
             elif isinstance(msg, HumanMessage):
-                contents.append(types.Content(role="user", parts=[types.Part(text=msg.content)]))
+                contents.append(types.Content(role="user", parts=self._convert_human_parts(msg.content)))
             elif isinstance(msg, AIMessage):
                 parts = []
                 if msg.tool_calls:

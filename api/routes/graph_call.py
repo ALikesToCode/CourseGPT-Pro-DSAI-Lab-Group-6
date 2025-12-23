@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import logging
 import time
@@ -28,6 +29,8 @@ DEFAULT_RAG_RESULTS = 5
 MAX_CONTEXT_CHARS = 6000
 OCR_SERVICE_URL = os.getenv("OCR_SERVICE_URL")
 OCR_SERVICE_TOKEN = os.getenv("OCR_SERVICE_TOKEN")
+SUPPORTED_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif", ".bmp")
+DEFAULT_PDF_MIME = "application/pdf"
 
 
 def _get_state_field(result_state, field):
@@ -169,11 +172,15 @@ async def _call_remote_ocr(
     if OCR_SERVICE_TOKEN:
         headers["Authorization"] = f"Bearer {OCR_SERVICE_TOKEN}"
 
+    is_pdf = _is_pdf(filename, content_type)
+    mime_type = content_type or (DEFAULT_PDF_MIME if is_pdf else "application/octet-stream")
+    upload_name = filename or ("upload.pdf" if is_pdf else "upload.bin")
+
     files = {
         "file": (
-            filename or "upload.pdf",
+            upload_name,
             file_bytes,
-            content_type or "application/pdf",
+            mime_type,
         )
     }
 
@@ -193,24 +200,58 @@ async def _call_remote_ocr(
     return _coalesce_ocr_response(data)
 
 
-async def _process_uploaded_file(file: UploadFile) -> Optional[Dict[str, Any]]:
-    file_bytes = await file.read()
-    file.file.seek(0)
-    if not file_bytes:
-        return None
+def _is_pdf(filename: str, content_type: Optional[str]) -> bool:
+    """
+    Validate PDFs by mime or extension to gate parsing logic.
+    """
+    normalized = (filename or "").lower()
+    mime = (content_type or "").lower()
+    return mime == DEFAULT_PDF_MIME or normalized.endswith(".pdf")
 
-    text = await _call_remote_ocr(file_bytes, file.filename or "", file.content_type)
-    if not text:
+
+def _is_image(filename: str, content_type: Optional[str]) -> bool:
+    """
+    Broad image detection to allow camera/photos uploads without hard-failing.
+    """
+    normalized = (filename or "").lower()
+    mime = (content_type or "").lower()
+    return mime.startswith("image/") or normalized.endswith(SUPPORTED_IMAGE_EXTS)
+
+
+async def _extract_uploaded_context(
+    file_bytes: bytes,
+    filename: str,
+    content_type: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """
+    Extract readable text from uploaded PDFs or images. Images rely on the OCR
+    microservice; PDFs fall back to pypdf if OCR is unavailable.
+    """
+    text = await _call_remote_ocr(file_bytes, filename, content_type)
+    if not text and _is_pdf(filename, content_type):
         text = await asyncio.to_thread(_extract_text_from_pdf_bytes, file_bytes)
 
     if not text:
         return None
 
     return {
-        "filename": file.filename,
-        "content_type": file.content_type,
+        "filename": filename,
+        "content_type": content_type or DEFAULT_PDF_MIME,
         "text": _truncate_text(text),
     }
+
+
+async def _process_uploaded_file(file: UploadFile) -> Optional[Dict[str, Any]]:
+    file_bytes = await file.read()
+    file.file.seek(0)
+    if not file_bytes:
+        return None
+
+    return await _extract_uploaded_context(
+        file_bytes=file_bytes,
+        filename=file.filename or "",
+        content_type=file.content_type,
+    )
 
 
 async def _fetch_rag_context(
@@ -318,6 +359,10 @@ async def graph_ask(
     """
 
     try:
+        prompt_text = prompt.strip()
+        if not prompt_text:
+            prompt_text = "Please review the attached file."
+
         start_time = time.monotonic()
         logger.info(
             "Graph chat start thread=%s user=%s prompt_preview=%s",
@@ -331,14 +376,25 @@ async def graph_ask(
         file_bytes = None
         filename = ""
         content_type = ""
+        file_kind = None
+        image_data_uri: Optional[str] = None
         if file is not None:
-            filename = (file.filename or "").lower()
-            is_pdf = (file.content_type == "application/pdf") or filename.endswith(".pdf")
-            if not is_pdf:
-                raise HTTPException(status_code=400, detail="Only PDF file uploads are accepted")
+            filename = file.filename or ""
+            content_type = file.content_type or ""
+            is_pdf = _is_pdf(filename, content_type)
+            is_image = _is_image(filename, content_type)
+            if not is_pdf and not is_image:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only PDF or image uploads are accepted",
+                )
+            file_kind = "pdf" if is_pdf else "image"
             file_bytes = await file.read()
-            content_type = file.content_type
+            content_type = content_type or (DEFAULT_PDF_MIME if is_pdf else "application/octet-stream")
             file.file.seek(0)
+            if is_image and file_bytes:
+                encoded = base64.b64encode(file_bytes).decode("ascii")
+                image_data_uri = f"data:{content_type or 'image/png'};base64,{encoded}"
 
         async def event_generator():
             # Guard the graph execution so slow upstream models don't hang the SSE forever.
@@ -349,27 +405,20 @@ async def graph_ask(
                 # 1. Process File Upload (if any)
                 uploaded_context: Optional[Dict[str, Any]] = None
                 if file_bytes:
-                    yield f"data: {json.dumps({'type': 'status', 'content': 'Processing uploaded file...'})}\n\n"
-                    # Re-construct a mock UploadFile-like object or just pass bytes to a helper
-                    # But _process_uploaded_file expects UploadFile. Let's refactor or just do the logic here.
-                    # We'll use a helper that takes bytes to avoid re-wrapping UploadFile.
-                    
-                    text = await _call_remote_ocr(file_bytes, filename, content_type)
-                    if not text:
-                        text = await asyncio.to_thread(_extract_text_from_pdf_bytes, file_bytes)
-                    
-                    if text:
-                        uploaded_context = {
-                            "filename": filename,
-                            "content_type": content_type,
-                            "text": _truncate_text(text),
-                        }
+                    uploaded_context = await _extract_uploaded_context(
+                        file_bytes=file_bytes,
+                        filename=filename or "upload",
+                        content_type=content_type,
+                    )
+
+                    if uploaded_context:
+                        uploaded_context["kind"] = file_kind or "file"
 
                 # 2. Fetch RAG Context
-                yield f"data: {json.dumps({'type': 'status', 'content': 'Fetching RAG context...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'content': 'Preparing context...'})}\n\n"
                 rag_context = await _fetch_rag_context(
                     ai_service,
-                    prompt,
+                    prompt_text,
                     user_id=user_id,
                     additional_context=uploaded_context["text"] if uploaded_context else None,
                 )
@@ -400,8 +449,15 @@ async def graph_ask(
                 yield f"data: {json.dumps({'type': 'status', 'content': 'connecting:router_agent'})}\n\n"
                 
                 async with asyncio.timeout(timeout_seconds):
+                    user_message_content: Any = prompt_text
+                    if image_data_uri:
+                        user_message_content = [
+                            {"type": "text", "text": prompt_text},
+                            {"type": "image_url", "image_url": {"url": image_data_uri}},
+                        ]
+
                     async for event in course_graph.astream_events(
-                        {"messages": [HumanMessage(content=prompt)]},
+                        {"messages": [HumanMessage(content=user_message_content)]},
                         config=config,
                         version="v2"
                     ):

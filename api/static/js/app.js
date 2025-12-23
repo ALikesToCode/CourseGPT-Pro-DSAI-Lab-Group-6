@@ -74,6 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let threadId = localStorage.getItem('coursegpt_thread_id');
     let userId = localStorage.getItem('coursegpt_user_id');
 
+    function updateSendButtonState() {
+        const hasText = userInput.value.trim() !== '';
+        sendBtn.disabled = !(hasText || currentFile);
+    }
+
     // Initialize Session
     if (!threadId || !userId) {
         threadId = 'thread_' + Date.now();
@@ -143,14 +148,14 @@ document.addEventListener('DOMContentLoaded', () => {
     userInput.addEventListener('input', function () {
         this.style.height = 'auto';
         this.style.height = (this.scrollHeight) + 'px';
-        sendBtn.disabled = this.value.trim() === '';
+        updateSendButtonState();
     });
 
     // Handle Enter key
     userInput.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            if (this.value.trim() !== '') {
+            if (this.value.trim() !== '' || currentFile) {
                 sendMessage();
             }
         }
@@ -164,6 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentFile = e.target.files[0];
             fileName.textContent = currentFile.name;
             filePreview.classList.remove('hidden');
+            updateSendButtonState();
         }
     });
 
@@ -171,6 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentFile = null;
         fileUpload.value = '';
         filePreview.classList.add('hidden');
+        updateSendButtonState();
     });
 
     // Send Message
@@ -204,10 +211,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function sendMessage() {
         const text = userInput.value.trim();
-        if (!text && !currentFile) return;
+        const attachedFile = currentFile;
+        if (!text && !attachedFile) return;
 
         // Add User Message
-        addMessage(text, 'user');
+        addMessage(text, 'user', attachedFile);
 
         // Reset Input
         userInput.value = '';
@@ -224,11 +232,12 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('prompt', text);
             formData.append('thread_id', threadId);
             formData.append('user_id', userId);
-            if (currentFile) {
-                formData.append('file', currentFile);
+            if (attachedFile) {
+                formData.append('file', attachedFile);
                 currentFile = null;
                 fileUpload.value = '';
                 filePreview.classList.add('hidden');
+                updateSendButtonState();
             }
 
             const response = await fetch('/graph/chat', {
@@ -402,7 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDiv.textContent = text;
     }
 
-    function addMessage(text, sender) {
+    function addMessage(text, sender, attachedFile = null) {
         if (sender === 'ai') return; // AI messages handled by streaming
 
         const messageDiv = document.createElement('div');
@@ -417,9 +426,37 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
+        const hasText = Boolean(text && text.trim());
+        const parsedText = hasText ? marked.parse(normalizeMathContent(text)) : '';
+
+        let attachmentHtml = '';
+        if (attachedFile) {
+            const isImage = attachedFile.type && attachedFile.type.startsWith('image/');
+            const icon = isImage ? 'image' : 'paperclip';
+            const safeName = attachedFile.name || 'attachment';
+            attachmentHtml = `
+                <div class="attachment-chip">
+                    <i data-feather="${icon}"></i>
+                    <span>${safeName}</span>
+                </div>
+            `;
+            if (isImage) {
+                const previewUrl = URL.createObjectURL(attachedFile);
+                attachmentHtml += `
+                    <div class="attachment-preview">
+                        <img src="${previewUrl}" alt="${safeName} preview">
+                    </div>
+                `;
+                setTimeout(() => URL.revokeObjectURL(previewUrl), 10000);
+            }
+        }
+
         messageDiv.innerHTML = `
             ${avatarHtml}
-            <div class="message-content">${marked.parse(normalizeMathContent(text))}</div>
+            <div class="message-content">
+                ${parsedText || (attachedFile ? '<p>Sent an attachment.</p>' : '')}
+                ${attachmentHtml}
+            </div>
         `;
         chatMessages.appendChild(messageDiv);
         feather.replace();

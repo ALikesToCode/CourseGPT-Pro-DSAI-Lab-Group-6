@@ -101,8 +101,8 @@
             <div class="chat-input-area">
                 <div class="input-container">
                     <div class="file-upload-wrapper">
-                        <input type="file" id="file-upload" accept=".pdf" hidden aria-label="Upload PDF">
-                        <button class="icon-btn" id="upload-btn" title="Upload PDF" aria-label="Upload PDF Button">
+                        <input type="file" id="file-upload" accept=".pdf,image/*" hidden aria-label="Upload PDF or image">
+                        <button class="icon-btn" id="upload-btn" title="Upload PDF or image" aria-label="Upload PDF or image Button">
                             <i data-feather="paperclip"></i>
                         </button>
                         <div id="file-preview" class="file-preview hidden">
@@ -133,7 +133,7 @@
                     <button class="btn-primary" id="docs-upload-btn">
                         <i data-feather="upload"></i> Upload Document
                     </button>
-                    <input type="file" id="docs-file-input" accept=".pdf" hidden>
+                    <input type="file" id="docs-file-input" accept=".pdf,image/*" hidden>
                 </div>
                 <div class="docs-list" id="docs-list">
                     <!-- Documents will be loaded here -->

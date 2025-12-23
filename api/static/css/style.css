@@ -496,6 +496,41 @@ body {
     color: inherit;
 }
 
+.attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background-color: var(--bg-secondary);
+    border: 1px dashed var(--border-color);
+    border-radius: 0.75rem;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+    color: var(--text-primary);
+}
+
+.message.user-message .attachment-chip {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+}
+
+.attachment-preview {
+    margin-top: 0.5rem;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    max-width: 320px;
+}
+
+.attachment-preview img {
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    background-color: var(--bg-tertiary);
+}
+
 /* Handoff Card */
 .handoff-card {
     background-color: rgba(30, 41, 59, 0.5);
